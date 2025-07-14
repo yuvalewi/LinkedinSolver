@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LinkedIn Pinpoint Solver</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Simple animation for the result */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .result-display {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-md mx-auto">
+        <div class="bg-gray-800 rounded-xl shadow-2xl p-6 md:p-8">
+            <div class="text-center mb-6">
+                <h1 class="text-3xl md:text-4xl font-bold text-blue-400">Pinpoint Solver</h1>
+                <p class="text-gray-400 mt-2">Enter the words revealed so far (1 to 5) to guess the category.</p>
+            </div>
+
+            <!-- Input Area -->
+            <div class="mb-4">
+                <label for="words-input" class="sr-only">Puzzle Words</label>
+                <textarea id="words-input" rows="4" class="w-full p-4 bg-gray-900 border-2 border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-200 placeholder-gray-500" placeholder="Enter 1-5 words, separated by spaces, commas, or new lines..."></textarea>
+            </div>
+
+            <!-- Action Button -->
+            <button id="solve-button" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-500 focus:ring-opacity-50 disabled:bg-gray-600 disabled:cursor-not-allowed">
+                <span id="button-text">Guess Category</span>
+                <span id="button-spinner" class="hidden">
+                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Thinking...
+                </span>
+            </button>
+
+            <!-- Results Area -->
+            <div id="results-container" class="mt-8">
+                <!-- Result will be injected here -->
+            </div>
+        </div>
+        <footer class="text-center mt-6 text-gray-500 text-sm">
+            <p>Powered by Gemini AI</p>
+        </footer>
+    </div>
+
+    <script>
+        const solveButton = document.getElementById('solve-button');
+        const buttonText = document.getElementById('button-text');
+        const buttonSpinner = document.getElementById('button-spinner');
+        const wordsInput = document.getElementById('words-input');
+        const resultsContainer = document.getElementById('results-container');
+
+        solveButton.addEventListener('click', handleSolve);
+
+        async function handleSolve() {
+            // 1. Get and validate input
+            const rawText = wordsInput.value.trim();
+            const words = rawText.split(/[\s,]+/).filter(word => word.length > 0);
+
+            if (words.length === 0) {
+                displayMessage('Please enter at least one word.', 'error');
+                return;
+            }
+            if (words.length > 5) {
+                displayMessage('Pinpoint puzzles have a maximum of 5 words. Please check your input.', 'error');
+                return;
+            }
+
+            // 2. Update UI to loading state
+            setLoadingState(true);
+            resultsContainer.innerHTML = ''; // Clear previous results
+
+            // 3. Construct the prompt for the Gemini API
+            const prompt = `
+                You are an expert puzzle solver for the LinkedIn game "Pinpoint".
+                The game reveals up to five words that all share a single common category.
+                Your task is to determine that common category based on the words provided.
+                The revealed words are: ${words.join(', ')}.
+                What is the most likely category?
+            `;
+
+            // 4. Define the desired JSON structure for the response
+            const schema = {
+                type: "OBJECT",
+                properties: {
+                    "category": {
+                        type: "STRING",
+                        description: "The single, common category for the provided words."
+                    }
+                },
+                required: ["category"]
+            };
+
+            // 5. Call the Gemini API
+            try {
+                const apiKey = ""; // API key is handled by the environment
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+                const payload = {
+                    contents: [{ role: "user", parts: [{ text: prompt }] }],
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: schema,
+                        temperature: 0.3 // A bit of creativity might be needed
+                    }
+                };
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API Error: ${response.status} ${response.statusText}`);
+                }
+
+                const result = await response.json();
+
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    
+                    const jsonText = result.candidates[0].content.parts[0].text;
+                    const parsedJson = JSON.parse(jsonText);
+                    displayResult(parsedJson.category, words);
+
+                } else {
+                    console.error("Unexpected API response structure:", result);
+                    displayMessage('The AI returned an unexpected response. Please try again.', 'error');
+                }
+
+            } catch (error) {
+                console.error('Error solving puzzle:', error);
+                displayMessage(`An error occurred: ${error.message}. Please check the console for details.`, 'error');
+            } finally {
+                // 6. Reset UI from loading state
+                setLoadingState(false);
+            }
+        }
+
+        function setLoadingState(isLoading) {
+            if (isLoading) {
+                solveButton.disabled = true;
+                buttonText.classList.add('hidden');
+                buttonSpinner.classList.remove('hidden');
+            } else {
+                solveButton.disabled = false;
+                buttonText.classList.remove('hidden');
+                buttonSpinner.classList.add('hidden');
+            }
+        }
+
+        function displayResult(category, words) {
+            resultsContainer.innerHTML = ''; // Clear any previous messages
+            if (!category) {
+                displayMessage('The AI could not determine a category. Try adding another word.', 'error');
+                return;
+            }
+
+            const resultDiv = document.createElement('div');
+            resultDiv.className = 'result-display text-center bg-gray-700 rounded-lg p-6';
+
+            const wordsP = document.createElement('p');
+            wordsP.className = 'text-gray-400 mb-2';
+            wordsP.textContent = 'For the words: ' + words.join(', ');
+            resultDiv.appendChild(wordsP);
+
+            const categoryLabel = document.createElement('p');
+            categoryLabel.className = 'text-lg text-blue-300';
+            categoryLabel.textContent = 'The category is likely:';
+            resultDiv.appendChild(categoryLabel);
+
+            const categoryH = document.createElement('h2');
+            categoryH.className = 'text-3xl font-bold text-white mt-1';
+            categoryH.textContent = category;
+            resultDiv.appendChild(categoryH);
+            
+            resultsContainer.appendChild(resultDiv);
+        }
+
+        function displayMessage(message, type = 'info') {
+            resultsContainer.innerHTML = ''; // Clear previous content
+            const messageDiv = document.createElement('div');
+            const colorClass = type === 'error' ? 'bg-red-900 border-red-700 text-red-200' : 'bg-blue-900 border-blue-700 text-blue-200';
+            messageDiv.className = `p-4 rounded-lg border ${colorClass} text-center`;
+            messageDiv.textContent = message;
+            resultsContainer.appendChild(messageDiv);
+        }
+    </script>
+</body>
+</html>
