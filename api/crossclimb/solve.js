@@ -76,6 +76,7 @@ export default async function handler(request, response) {
             const topWord = orderedLadder[0];
             const bottomWord = orderedLadder[orderedLadder.length - 1];
             const middleWords = orderedLadder.slice(1, -1);
+            const wordLength = topWord.length; // Determine word length from the ladder
 
             const prompt = `
                 You are an expert puzzle solver for the final step of the LinkedIn game "Crossclimb".
@@ -87,7 +88,10 @@ export default async function handler(request, response) {
                 Now, you are given a final clue that describes a relationship between two *new* words: "${finalClue}".
 
                 Your task is to determine the two new words that solve this final clue.
-                IMPORTANT: The two new words you find MUST NOT be any of the words already used in the ladder (${orderedLadder.join(', ')}).
+                IMPORTANT CONSTRAINTS:
+                1. The two new words you find MUST NOT be any of the words already used in the ladder (${orderedLadder.join(', ')}).
+                2. Both new words MUST be exactly ${wordLength} letters long.
+
                 Return the two new words as a list.
             `;
 
@@ -96,7 +100,7 @@ export default async function handler(request, response) {
                 properties: {
                     "final_solution": {
                         type: "ARRAY",
-                        description: "An array containing the two new words that solve the final clue, ensuring they are not duplicates of the ladder words.",
+                        description: `An array containing the two new ${wordLength}-letter words that solve the final clue, ensuring they are not duplicates of the ladder words.`,
                         items: { "type": "STRING" }
                     }
                 },
