@@ -1,4 +1,38 @@
 // Located at /api/crossclimb/solve.js
+// This version uses a two-step "Generator-Refiner" prompt to ensure accuracy.
+
+// --- Helper function to verify the AI's solution ---
+function isLadderValid(solution, activeClueWord) {
+    if (!solution || !solution.ordered_ladder || !solution.solved_words) return false;
+    
+    const { ordered_ladder, solved_words } = solution;
+    
+    // Check 1: All solved words must be in the ordered ladder
+    const solvedSet = new Set(solved_words.map(item => item.word.toUpperCase()));
+    const ladderSet = new Set(ordered_ladder.map(word => word.toUpperCase()));
+    if (solvedSet.size !== ladderSet.size) return false;
+    for (const word of solvedSet) {
+        if (!ladderSet.has(word)) return false;
+    }
+
+    // Check 2: The active clue's word must be at the bottom
+    if (ordered_ladder[ordered_ladder.length - 1].toUpperCase() !== activeClueWord.toUpperCase()) return false;
+
+    // Check 3: It must be a valid word ladder (one letter difference)
+    for (let i = 0; i < ordered_ladder.length - 1; i++) {
+        let diff = 0;
+        const word1 = ordered_ladder[i];
+        const word2 = ordered_ladder[i+1];
+        if (word1.length !== word2.length) return false;
+        for (let j = 0; j < word1.length; j++) {
+            if (word1[j] !== word2[j]) diff++;
+        }
+        if (diff !== 1) return false;
+    }
+
+    return true;
+}
+
 
 export default async function handler(request, response) {
     // Handle CORS
@@ -29,7 +63,8 @@ export default async function handler(request, response) {
                 return response.status(400).json({ error: 'Missing required fields for ladder.' });
             }
 
-            const prompt = `
+            // --- STEP 1: GENERATOR PROMPT ---
+            const generatorPrompt = `
                 You are an expert puzzle solver for the LinkedIn game "Crossclimb".
                 The game is a word ladder. You need to find a sequence of words where each word is formed by changing only one letter from the previous word.
                 All words in the ladder must have the same length.
@@ -40,15 +75,10 @@ export default async function handler(request, response) {
                 - The clue for the BOTTOM word in the ladder is: "${activeClue}"
 
                 Your task is to perform two steps with absolute precision:
-                1. Solve each clue to find the corresponding ${wordLength}-letter word. It is critical that you provide a solved word for EVERY clue in the list.
-                2. Arrange ALL of the solved words into a valid word ladder.
+                1. Solve each clue to find the corresponding ${wordLength}-letter word. Provide a solved word for EVERY clue.
+                2. Arrange ALL solved words into a valid word ladder. The word for "${activeClue}" MUST be at the bottom.
 
-                CRITICAL CONSTRAINTS:
-                - The word that solves the clue "${activeClue}" MUST be the last word in the final ordered ladder. You should determine this word first and then build the ladder upwards from it.
-                - The 'ordered_ladder' list MUST contain the exact same words as the words solved from the clues, just in the correct order. Do not invent new words or omit any.
-                - The 'ordered_ladder' MUST be a valid word ladder where each word is only one letter different from the word before it.
-
-                Return the result in two parts: a list of each clue and its solved word, and a separate list of the final, valid, ordered ladder.
+                Return the result in two parts: a list of each clue and its solved word, and a separate list of the final ordered ladder.
             `;
 
             const schema = {
@@ -56,24 +86,74 @@ export default async function handler(request, response) {
                 properties: {
                     "solved_words": {
                         type: "ARRAY",
-                        description: `An array of objects, each containing a clue and its corresponding solved word. This array MUST have exactly ${allClues.length} items, one for each provided clue.`,
+                        description: `An array of objects, each containing a clue and its corresponding solved word. This array MUST have exactly ${allClues.length} items.`,
                         items: { type: "OBJECT", properties: { "clue": { "type": "STRING" }, "word": { "type": "STRING" } }, required: ["clue", "word"] }
                     },
                     "ordered_ladder": {
                         type: "ARRAY",
-                        description: `An array of the solved ${wordLength}-letter words in the correct word ladder order, following all rules.`,
+                        description: `An array of the solved ${wordLength}-letter words in the correct word ladder order.`,
                         items: { "type": "STRING" }
                     }
                 },
                 required: ["solved_words", "ordered_ladder"]
             };
 
-            payload = {
-                contents: [{ role: "user", parts: [{ text: prompt }] }],
-                generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0.1 }
+            const generatorPayload = {
+                contents: [{ role: "user", parts: [{ text: generatorPrompt }] }],
+                generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0.2 }
+            };
+            
+            // --- First API Call ---
+            const genResponse = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(generatorPayload)
+            });
+
+            if (!genResponse.ok) throw new Error(`Gemini API failed on generate: ${genResponse.statusText}`);
+            
+            let initialSolution = JSON.parse((await genResponse.json()).candidates[0].content.parts[0].text);
+            const activeClueWord = initialSolution.solved_words.find(sw => sw.clue === activeClue)?.word;
+
+            // --- STEP 2: VERIFICATION & REFINEMENT ---
+            if (isLadderValid(initialSolution, activeClueWord)) {
+                // If the first solution is good, return it.
+                return response.status(200).json(initialSolution);
+            }
+
+            // If verification fails, create a refinement prompt.
+            const refinerPrompt = `
+                The following proposed solution to a Crossclimb puzzle is invalid.
+                Proposed Solution: ${JSON.stringify(initialSolution)}
+
+                The rules are:
+                1. The 'ordered_ladder' must contain the exact same words as those in 'solved_words'.
+                2. The word for the clue "${activeClue}" must be at the bottom of the ladder.
+                3. The ladder must be valid, with each word changing by only one letter from the previous one.
+
+                Please analyze the proposed solution, identify the errors, and provide a corrected, valid solution that follows all rules.
+            `;
+
+            const refinerPayload = {
+                contents: [{ role: "user", parts: [{ text: refinerPrompt }] }],
+                generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0.0 }
             };
 
+            // --- Second API Call ---
+            const refinerResponse = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(refinerPayload)
+            });
+            
+            if (!refinerResponse.ok) throw new Error(`Gemini API failed on refine: ${refinerResponse.statusText}`);
+
+            const finalSolution = JSON.parse((await refinerResponse.json()).candidates[0].content.parts[0].text);
+            return response.status(200).json(finalSolution);
+
+
         } else if (type === 'final') {
+            // ... (final clue logic remains the same)
             const { finalClue, orderedLadder } = request.body;
             if (!finalClue || !orderedLadder || orderedLadder.length < 2) {
                 return response.status(400).json({ error: 'Missing required fields for final clue.' });
@@ -118,28 +198,27 @@ export default async function handler(request, response) {
                 contents: [{ role: "user", parts: [{ text: prompt }] }],
                 generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0.2 }
             };
+            
+            const geminiResponse = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
 
+            if (!geminiResponse.ok) {
+                const errorText = await geminiResponse.text();
+                console.error("Gemini API Error:", errorText);
+                return response.status(geminiResponse.status).json({ error: `Gemini API failed: ${geminiResponse.statusText}` });
+            }
+
+            const result = await response.json();
+            const jsonText = result.candidates[0].content.parts[0].text;
+            const parsedJson = JSON.parse(jsonText);
+
+            return response.status(200).json(parsedJson);
         } else {
             return response.status(400).json({ error: 'Invalid request type.' });
         }
-
-        const geminiResponse = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        if (!geminiResponse.ok) {
-            const errorText = await geminiResponse.text();
-            console.error("Gemini API Error:", errorText);
-            return response.status(geminiResponse.status).json({ error: `Gemini API failed: ${geminiResponse.statusText}` });
-        }
-
-        const result = await geminiResponse.json();
-        const jsonText = result.candidates[0].content.parts[0].text;
-        const parsedJson = JSON.parse(jsonText);
-
-        return response.status(200).json(parsedJson);
 
     } catch (error) {
         console.error('Error in Crossclimb solver function:', error);
