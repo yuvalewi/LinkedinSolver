@@ -45,12 +45,10 @@ export default async function handler(request, response) {
             }
 
             prompt += `
-                Your task is to perform two steps:
-                1. Solve each clue to find the corresponding ${wordLength}-letter word. It is critical that you provide a solved word for EVERY clue in the list.
-                2. Arrange all the solved words into a valid word ladder.
-                IMPORTANT CONSTRAINTS:
-                - Every word in the ladder MUST be formed by changing only one letter from the previous word.
-                - In a valid solution, the sorted and unsorted list of solved words MUST contains the exact same words.
+                Your task is to perform three steps:
+                1. Solve each clue to find the corresponding ${wordLength}-letter word. It is critical that you provide a solved word for EVERY clue in the list. 
+                2. Arrange all the solved words into a valid word ladder. Every word in the ladder MUST be formed by changing only one letter from the previous word.
+                3. If the lists does not contain the exact same words, try again.
                 `;
 
             if (activeClue) {
