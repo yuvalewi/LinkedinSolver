@@ -75,13 +75,20 @@ export default async function handler(request, response) {
 
             const topWord = orderedLadder[0];
             const bottomWord = orderedLadder[orderedLadder.length - 1];
+            const middleWords = orderedLadder.slice(1, -1);
 
             const prompt = `
                 You are an expert puzzle solver for the final step of the LinkedIn game "Crossclimb".
-                The top word of the solved ladder is "${topWord}" and the bottom word is "${bottomWord}".
-                The final clue, which describes the relationship between these two words, is: "${finalClue}".
+                A word ladder has been solved.
+                - The top word of the ladder is: "${topWord}"
+                - The bottom word of the ladder is: "${bottomWord}"
+                - The words in the middle of the ladder are: ${middleWords.join(', ')}.
 
-                Your task is to determine the two words that solve this final clue. Return them as a list.
+                Now, you are given a final clue that describes a relationship between two *new* words: "${finalClue}".
+
+                Your task is to determine the two new words that solve this final clue.
+                IMPORTANT: The two new words you find MUST NOT be any of the words already used in the ladder (${orderedLadder.join(', ')}).
+                Return the two new words as a list.
             `;
 
             const schema = {
@@ -89,7 +96,7 @@ export default async function handler(request, response) {
                 properties: {
                     "final_solution": {
                         type: "ARRAY",
-                        description: "An array containing the two words that solve the final clue.",
+                        description: "An array containing the two new words that solve the final clue, ensuring they are not duplicates of the ladder words.",
                         items: { "type": "STRING" }
                     }
                 },
