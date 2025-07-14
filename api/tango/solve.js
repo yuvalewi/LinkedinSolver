@@ -1,5 +1,86 @@
 // Located at /api/tango/solve.js
-// Solves the Tango puzzle using the Gemini API.
+// This version uses a backtracking algorithm instead of the Gemini API.
+
+// --- Algorithmic Solver ---
+
+function isValid(grid, r, c, val, constraintsMap) {
+    const n = grid.length;
+    const tempGrid = grid.map(row => [...row]);
+    tempGrid[r][c] = val;
+
+    // 1. Adjacency Rule: No more than 2 identical symbols next to each other
+    // Check horizontally
+    if (c > 1 && tempGrid[r][c] === tempGrid[r][c - 1] && tempGrid[r][c] === tempGrid[r][c - 2]) return false;
+    if (c < n - 2 && tempGrid[r][c] === tempGrid[r][c + 1] && tempGrid[r][c] === tempGrid[r][c + 2]) return false;
+    if (c > 0 && c < n - 1 && tempGrid[r][c - 1] === tempGrid[r][c] && tempGrid[r][c] === tempGrid[r][c + 1]) return false;
+    // Check vertically
+    if (r > 1 && tempGrid[r][c] === tempGrid[r - 1][c] && tempGrid[r][c] === tempGrid[r - 2][c]) return false;
+    if (r < n - 2 && tempGrid[r][c] === tempGrid[r + 1][c] && tempGrid[r][c] === tempGrid[r + 2][c]) return false;
+    if (r > 0 && r < n - 1 && tempGrid[r - 1][c] === tempGrid[r][c] && tempGrid[r][c] === tempGrid[r + 1][c]) return false;
+
+    // 2. Balance Rule: Equal numbers of suns and moons in each row/column
+    let rowCounts = { 0: 0, 1: 0 };
+    let colCounts = { 0: 0, 1: 0 };
+    for (let i = 0; i < n; i++) {
+        if (tempGrid[r][i] !== -1) rowCounts[tempGrid[r][i]]++;
+        if (tempGrid[i][c] !== -1) colCounts[tempGrid[i][c]]++;
+    }
+    if (rowCounts[0] > n / 2 || rowCounts[1] > n / 2) return false;
+    if (colCounts[0] > n / 2 || colCounts[1] > n / 2) return false;
+
+    // 3. Uniqueness Rule (only check if row/column is full)
+    if (rowCounts[0] + rowCounts[1] === n) {
+        for (let i = 0; i < r; i++) {
+            if (tempGrid[i].every((cell, j) => cell === tempGrid[r][j])) return false;
+        }
+    }
+    if (colCounts[0] + colCounts[1] === n) {
+        for (let i = 0; i < c; i++) {
+            if (tempGrid.every((row, j) => row[i] === tempGrid[j][c])) return false;
+        }
+    }
+
+    // 4. Constraint Rules
+    const checkConstraint = (nr, nc) => {
+        const key = `${r},${c}-${nr},${nc}`;
+        const rule = constraintsMap.get(key);
+        if (rule && tempGrid[nr][nc] !== -1) {
+            if (rule === 'equal' && tempGrid[nr][nc] !== val) return false;
+            if (rule === 'unequal' && tempGrid[nr][nc] === val) return false;
+        }
+        return true;
+    };
+    if (r > 0 && !checkConstraint(r - 1, c)) return false;
+    if (r < n - 1 && !checkConstraint(r + 1, c)) return false;
+    if (c > 0 && !checkConstraint(r, c - 1)) return false;
+    if (c < n - 1 && !checkConstraint(r, c + 1)) return false;
+
+    return true;
+}
+
+function solve(grid, constraintsMap) {
+    const n = grid.length;
+    for (let r = 0; r < n; r++) {
+        for (let c = 0; c < n; c++) {
+            if (grid[r][c] === -1) { // Find first empty cell
+                for (let val of [0, 1]) { // Try placing Moon (0), then Sun (1)
+                    if (isValid(grid, r, c, val, constraintsMap)) {
+                        grid[r][c] = val;
+                        if (solve(grid, constraintsMap)) {
+                            return true; // Solution found
+                        }
+                        grid[r][c] = -1; // Backtrack
+                    }
+                }
+                return false; // No valid number for this cell
+            }
+        }
+    }
+    return true; // All cells filled
+}
+
+
+// --- Main Handler ---
 
 export default async function handler(request, response) {
     // Handle CORS
@@ -14,79 +95,25 @@ export default async function handler(request, response) {
         return response.status(405).json({ error: 'Method Not Allowed' });
     }
     
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-        return response.status(500).json({ error: 'API key not configured.' });
-    }
-
     try {
         const { gridSize, initialGrid, constraints } = request.body;
         if (!gridSize || !initialGrid || !constraints) {
             return response.status(400).json({ error: 'Invalid input format.' });
         }
 
-        // --- Prompt Engineering ---
-        let prompt = `
-            You are an expert logic puzzle solver. The puzzle is a binary grid puzzle called Tango.
-            The goal is to fill every cell of a ${gridSize}x${gridSize} grid with one of two symbols, Sun (represented by 1) or Moon (represented by 0).
-
-            The rules are:
-            1.  No more than two identical symbols can be adjacent to each other in a row or column. (e.g., 1,1,1 or 0,0,0 is illegal).
-            2.  Each row and each column must have an equal number of Suns and Moons (i.e., ${gridSize / 2} of each).
-            3.  No two rows can be identical, and no two columns can be identical.
-            4.  There are specific constraints between adjacent cells:
-                - An '=' sign means the two cells must have the same symbol.
-                - An 'X' sign means the two cells must have different symbols.
-            
-            Here is the specific puzzle to solve:
-            - Grid Size: ${gridSize}x${gridSize}
-            - Initial State (-1 represents an empty cell):
-            ${JSON.stringify(initialGrid)}
-            - Constraints:
-            ${constraints.map(c => `Cell [${c.c1.join(',')}] and Cell [${c.c2.join(',')}] must be ${c.type}.`).join('\n')}
-
-            Based on these rules and the specific puzzle layout, provide the single, unique, fully solved grid.
-        `;
-
-        const schema = {
-            type: "OBJECT",
-            properties: {
-                "solution": {
-                    type: "ARRAY",
-                    description: `The solved ${gridSize}x${gridSize} grid, where 1 represents a Sun and 0 represents a Moon.`,
-                    items: {
-                        type: "ARRAY",
-                        items: { "type": "NUMBER" }
-                    }
-                }
-            },
-            required: ["solution"]
-        };
-        
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-        
-        const payload = {
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
-            generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0.0 }
-        };
-
-        const geminiResponse = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+        // Create a map for faster constraint lookups
+        const constraintsMap = new Map();
+        constraints.forEach(c => {
+            // Store the rule in both directions for easy lookup
+            constraintsMap.set(`${c.c1.join(',')}-${c.c2.join(',')}`, c.type);
+            constraintsMap.set(`${c.c2.join(',')}-${c.c1.join(',')}`, c.type);
         });
 
-        if (!geminiResponse.ok) {
-            const errorText = await geminiResponse.text();
-            console.error("Gemini API Error:", errorText);
-            return response.status(geminiResponse.status).json({ error: `Gemini API failed: ${geminiResponse.statusText}` });
+        if (solve(initialGrid, constraintsMap)) {
+            return response.status(200).json({ solution: initialGrid });
+        } else {
+            return response.status(200).json({ solution: null, error: "No solution found." });
         }
-
-        const result = await geminiResponse.json();
-        const jsonText = result.candidates[0].content.parts[0].text;
-        const parsedJson = JSON.parse(jsonText);
-
-        return response.status(200).json(parsedJson);
 
     } catch (error) {
         console.error('Error in Tango solver function:', error);
