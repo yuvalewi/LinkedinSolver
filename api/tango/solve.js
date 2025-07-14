@@ -1,304 +1,153 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tango Solver</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        body { font-family: 'Inter', sans-serif; }
-        .grid-container { display: grid; position: relative; }
-        .grid-cell { background-color: #4b5563; position: relative; }
-        .cell-icon { font-size: 2rem; line-height: 1; user-select: none; }
-        .constraint {
-            position: absolute;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            color: white;
-            cursor: pointer;
-            z-index: 10;
-            background-color: rgba(31, 41, 55, 0.8);
-            border-radius: 4px;
+// Located at /api/tango/solve.js
+// This version uses a corrected and more robust backtracking algorithm.
+
+// --- Algorithmic Solver ---
+
+function isValid(grid, r, c, val, constraintsMap) {
+    const n = grid.length;
+
+    // Create a temporary grid to check the new state
+    const tempGrid = grid.map(row => [...row]);
+    tempGrid[r][c] = val;
+
+    // Rule 1: No more than two identical symbols can be adjacent
+    // Check horizontally for "XXX" or "OOO"
+    for (let j = 0; j < n - 2; j++) {
+        if (tempGrid[r][j] !== -1 && tempGrid[r][j] === tempGrid[r][j + 1] && tempGrid[r][j] === tempGrid[r][j + 2]) {
+            return false;
         }
-    </style>
-</head>
-<body class="bg-gray-900 text-white flex justify-center min-h-screen p-4">
-    <div class="w-full max-w-4xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <!-- Input Section -->
-        <div class="bg-gray-800 rounded-xl shadow-2xl p-6 md:p-8">
-            <div class="text-center mb-6">
-                <h1 class="text-3xl md:text-4xl font-bold text-blue-400">Tango Solver</h1>
-                <p class="text-gray-400 mt-2">Recreate the puzzle grid below.</p>
-            </div>
-            <div class="flex items-center justify-center mb-4">
-                 <label for="grid-size" class="text-sm font-medium text-gray-300 mr-2">Grid Size:</label>
-                 <select id="grid-size" class="bg-gray-900 border-2 border-gray-700 rounded-lg p-2">
-                    <option value="4">4x4</option>
-                    <option value="6" selected>6x6</option>
-                    <option value="8">8x8</option>
-                    <option value="10">10x10</option>
-                    <option value="12">12x12</option>
-                 </select>
-            </div>
-            <div id="input-grid-container" class="bg-gray-700 p-2 rounded-lg aspect-square">
-                <div id="input-grid" class="w-full h-full grid-container"></div>
-            </div>
-            <!-- Action Buttons -->
-            <div class="mt-6 grid grid-cols-2 gap-4">
-                <button id="solve-button" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg">Solve Puzzle</button>
-                <div class="grid grid-cols-2 gap-2">
-                    <button id="save-button" class="w-full bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 px-4 rounded-lg">Save</button>
-                    <button id="upload-button" class="w-full bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 px-4 rounded-lg">Load</button>
-                    <input type="file" id="file-input" class="hidden" accept=".json">
-                </div>
-            </div>
-        </div>
-
-        <!-- Solution Section -->
-        <div class="bg-gray-800 rounded-xl shadow-2xl p-6 md:p-8">
-             <h2 class="text-2xl font-bold text-center text-blue-300 mb-4">Solution</h2>
-             <div id="solution-container" class="bg-gray-700 p-2 rounded-lg aspect-square">
-                <div id="solution-grid" class="w-full h-full grid-container"></div>
-             </div>
-        </div>
-    </div>
-     <footer class="fixed bottom-4 text-center w-full">
-        <a href="/games/" class="text-blue-400 hover:text-blue-300 text-sm">&larr; Back to All Games</a>
-    </footer>
-
-    <script>
-        const gridSizeSelect = document.getElementById('grid-size');
-        const inputGrid = document.getElementById('input-grid');
-        const solutionGrid = document.getElementById('solution-grid');
-        const solveButton = document.getElementById('solve-button');
-        const saveButton = document.getElementById('save-button');
-        const uploadButton = document.getElementById('upload-button');
-        const fileInput = document.getElementById('file-input');
-
-        let gridSize = 6;
-        const sun = '☀️';
-        const moon = '🌙';
-
-        function getIconSize() {
-            if (gridSize >= 10) return 1.25 * 16;
-            if (gridSize >= 8) return 1.5 * 16;
-            return 2 * 16;
+    }
+    // Check vertically
+    for (let i = 0; i < n - 2; i++) {
+        if (tempGrid[i][c] !== -1 && tempGrid[i][c] === tempGrid[i + 1][c] && tempGrid[i][c] === tempGrid[i + 2][c]) {
+            return false;
         }
+    }
 
-        function createGrid() {
-            gridSize = parseInt(gridSizeSelect.value);
-            [inputGrid, solutionGrid].forEach(gridEl => {
-                gridEl.innerHTML = '';
-                gridEl.style.gridTemplateColumns = `repeat(${gridSize}, 1fr)`;
-                gridEl.style.gridTemplateRows = `repeat(${gridSize}, 1fr)`;
-            });
+    // Rule 2: Equal number of suns (1) and moons (0) in each row/column
+    let rowCounts = { 0: 0, 1: 0 };
+    let colCounts = { 0: 0, 1: 0 };
+    for (let i = 0; i < n; i++) {
+        if (tempGrid[r][i] !== -1) rowCounts[tempGrid[r][i]]++;
+        if (tempGrid[i][c] !== -1) colCounts[tempGrid[i][c]]++;
+    }
+    if (rowCounts[0] > n / 2 || rowCounts[1] > n / 2) return false;
+    if (colCounts[0] > n / 2 || colCounts[1] > n / 2) return false;
 
-            for (let r = 0; r < gridSize; r++) {
-                for (let c = 0; c < gridSize; c++) {
-                    const inputCell = document.createElement('div');
-                    inputCell.className = 'grid-cell flex items-center justify-center cursor-pointer';
-                    inputCell.dataset.state = 'empty';
-                    inputCell.addEventListener('click', () => {
-                        const states = ['empty', 'sun', 'moon'];
-                        const currentState = inputCell.dataset.state;
-                        const nextState = states[(states.indexOf(currentState) + 1) % states.length];
-                        inputCell.dataset.state = nextState;
-                        const iconSize = getIconSize();
-                        inputCell.innerHTML = nextState === 'sun' ? `<span class="cell-icon" style="font-size: ${iconSize}px;">${sun}</span>` : nextState === 'moon' ? `<span class="cell-icon" style="font-size: ${iconSize}px;">${moon}</span>` : '';
-                    });
-                    inputGrid.appendChild(inputCell);
-
-                    const solutionCell = document.createElement('div');
-                    solutionCell.className = 'grid-cell flex items-center justify-center';
-                    solutionGrid.appendChild(solutionCell);
-
-                    // Create constraint placers with data attributes for coordinates
-                    if (c < gridSize - 1) { // Horizontal constraint
-                        const hConstraint = document.createElement('div');
-                        hConstraint.className = 'constraint';
-                        hConstraint.dataset.type = 'none';
-                        // NEW: Store coordinates directly on the element
-                        hConstraint.dataset.r1 = r; hConstraint.dataset.c1 = c;
-                        hConstraint.dataset.r2 = r; hConstraint.dataset.c2 = c + 1;
-                        hConstraint.style.width = '20px'; hConstraint.style.height = '10px';
-                        hConstraint.style.top = `calc(${r * (100 / gridSize)}% + ${(100 / gridSize / 2)}% - 5px)`;
-                        hConstraint.style.left = `calc(${(c + 1) * (100 / gridSize)}% - 10px)`;
-                        hConstraint.addEventListener('click', cycleConstraint);
-                        inputGrid.appendChild(hConstraint);
-                    }
-                    if (r < gridSize - 1) { // Vertical constraint
-                        const vConstraint = document.createElement('div');
-                        vConstraint.className = 'constraint';
-                        vConstraint.dataset.type = 'none';
-                        // NEW: Store coordinates directly on the element
-                        vConstraint.dataset.r1 = r; vConstraint.dataset.c1 = c;
-                        vConstraint.dataset.r2 = r + 1; vConstraint.dataset.c2 = c;
-                        vConstraint.style.width = '10px'; vConstraint.style.height = '20px';
-                        vConstraint.style.top = `calc(${(r + 1) * (100 / gridSize)}% - 10px)`;
-                        vConstraint.style.left = `calc(${c * (100 / gridSize)}% + ${(100 / gridSize / 2)}% - 5px)`;
-                        vConstraint.addEventListener('click', cycleConstraint);
-                        inputGrid.appendChild(vConstraint);
-                    }
+    // Rule 3: No two rows or columns are identical (only check if they are full)
+    if (!tempGrid[r].includes(-1)) { // If the current row is now full
+        for (let i = 0; i < n; i++) {
+            if (i === r) continue;
+            if (!tempGrid[i].includes(-1)) { // Compare only with other full rows
+                if (tempGrid[i].every((cell, j) => cell === tempGrid[r][j])) {
+                    return false;
                 }
             }
         }
-        
-        function cycleConstraint(e) {
-            const el = e.target;
-            const types = ['none', 'equal', 'unequal'];
-            const currentType = el.dataset.type;
-            const nextType = types[(types.indexOf(currentType) + 1) % types.length];
-            el.dataset.type = nextType;
-            if (nextType === 'equal') el.textContent = '=';
-            else if (nextType === 'unequal') el.textContent = 'X';
-            else el.textContent = '';
-        }
-        
-        function getBoardState() {
-            const initialGrid = [];
-            const inputCells = inputGrid.querySelectorAll('.grid-cell');
-            for (let r = 0; r < gridSize; r++) {
-                const row = [];
-                for (let c = 0; c < gridSize; c++) {
-                    const state = inputCells[r * gridSize + c].dataset.state;
-                    row.push(state === 'sun' ? 1 : state === 'moon' ? 0 : -1);
+    }
+    let colIsFull = true;
+    for (let i = 0; i < n; i++) { if (tempGrid[i][c] === -1) { colIsFull = false; break; } }
+    if (colIsFull) {
+        for (let j = 0; j < n; j++) {
+            if (j === c) continue;
+            let otherColIsFull = true;
+            for (let i = 0; i < n; i++) { if (tempGrid[i][j] === -1) { otherColIsFull = false; break; } }
+            if (otherColIsFull) {
+                let colsAreIdentical = true;
+                for (let i = 0; i < n; i++) {
+                    if (tempGrid[i][c] !== tempGrid[i][j]) {
+                        colsAreIdentical = false;
+                        break;
+                    }
                 }
-                initialGrid.push(row);
+                if (colsAreIdentical) return false;
             }
-
-            const constraints = [];
-            // NEW: Read coordinates directly from data attributes
-            inputGrid.querySelectorAll('.constraint').forEach(el => {
-                if (el.dataset.type !== 'none') {
-                    constraints.push({
-                        type: el.dataset.type,
-                        c1: [parseInt(el.dataset.r1), parseInt(el.dataset.c1)],
-                        c2: [parseInt(el.dataset.r2), parseInt(el.dataset.c2)]
-                    });
-                }
-            });
-            return { gridSize, initialGrid, constraints };
         }
+    }
+    
+    // Rule 4: Check constraints (= and X) with neighbors
+    const checkConstraint = (r1, c1, r2, c2) => {
+        const key = `${r1},${c1}-${r2},${c2}`;
+        const rule = constraintsMap.get(key);
+        if (rule && tempGrid[r2][c2] !== -1) { // Only check if neighbor is filled
+            if (rule === 'equal' && tempGrid[r1][c1] !== tempGrid[r2][c2]) return false;
+            if (rule === 'unequal' && tempGrid[r1][c1] === tempGrid[r2][c2]) return false;
+        }
+        return true;
+    };
+    if (c > 0 && !checkConstraint(r, c, r, c - 1)) return false;
+    if (c < n - 1 && !checkConstraint(r, c, r, c + 1)) return false;
+    if (r > 0 && !checkConstraint(r, c, r - 1, c)) return false;
+    if (r < n - 1 && !checkConstraint(r, c, r + 1, c)) return false;
 
-        function loadBoardState(data) {
-            try {
-                gridSizeSelect.value = data.gridSize;
-                createGrid(); // Recreate grid with correct size
 
-                const inputCells = inputGrid.querySelectorAll('.grid-cell');
-                for (let r = 0; r < data.gridSize; r++) {
-                    for (let c = 0; c < data.gridSize; c++) {
-                        const stateVal = data.initialGrid[r][c];
-                        if (stateVal !== -1) {
-                            const cell = inputCells[r * data.gridSize + c];
-                            const state = stateVal === 1 ? 'sun' : 'moon';
-                            cell.dataset.state = state;
-                            const iconSize = getIconSize();
-                            cell.innerHTML = state === 'sun' ? `<span class="cell-icon" style="font-size: ${iconSize}px;">${sun}</span>` : `<span class="cell-icon" style="font-size: ${iconSize}px;">${moon}</span>`;
+    return true;
+}
+
+function solve(grid, constraintsMap) {
+    const n = grid.length;
+    for (let r = 0; r < n; r++) {
+        for (let c = 0; c < n; c++) {
+            if (grid[r][c] === -1) { // Find first empty cell
+                // Try placing Moon (0), then Sun (1)
+                for (let val of [0, 1]) { 
+                    if (isValid(grid, r, c, val, constraintsMap)) {
+                        grid[r][c] = val;
+                        if (solve(grid, constraintsMap)) {
+                            return true; // Solution found
                         }
+                        grid[r][c] = -1; // Backtrack
                     }
                 }
-
-                // NEW: Find constraints by their data attributes, not by style calculation
-                inputGrid.querySelectorAll('.constraint').forEach(el => {
-                    const r1 = parseInt(el.dataset.r1);
-                    const c1 = parseInt(el.dataset.c1);
-                    const r2 = parseInt(el.dataset.r2);
-                    const c2 = parseInt(el.dataset.c2);
-
-                    const foundConstraint = data.constraints.find(con => 
-                        con.c1[0] === r1 && con.c1[1] === c1 && 
-                        con.c2[0] === r2 && con.c2[1] === c2
-                    );
-
-                    if(foundConstraint) {
-                        el.dataset.type = foundConstraint.type;
-                        el.textContent = foundConstraint.type === 'equal' ? '=' : 'X';
-                    }
-                });
-            } catch (e) {
-                alert("Failed to load board. The file may be invalid.");
-                console.error("Load board error:", e);
+                return false; // No valid number for this cell, trigger backtracking
             }
         }
+    }
+    return true; // All cells filled, solution found
+}
 
-        async function handleSolve() {
-            const boardState = getBoardState();
-            setLoadingState(true);
-            try {
-                const response = await fetch('/api/tango/solve', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(boardState)
-                });
-                if (!response.ok) throw new Error((await response.json()).error || 'Server Error');
-                const result = await response.json();
-                displaySolution(result.solution);
-            } catch (error) {
-                alert(`Error: ${error.message}`);
-            } finally {
-                setLoadingState(false);
-            }
+
+// --- Main Handler ---
+
+export default async function handler(request, response) {
+    // Handle CORS
+    response.setHeader('Access-Control-Allow-Origin', '*');
+    response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    if (request.method === 'OPTIONS') {
+        return response.status(200).end();
+    }
+
+    if (request.method !== 'POST') {
+        return response.status(405).json({ error: 'Method Not Allowed' });
+    }
+    
+    try {
+        const { gridSize, initialGrid, constraints } = request.body;
+        if (!gridSize || !initialGrid || !constraints) {
+            return response.status(400).json({ error: 'Invalid input format.' });
         }
 
-        function displaySolution(solution) {
-            if (!solution) {
-                alert("Solver could not find a solution for this configuration.");
-                return;
-            }
-            const solutionCells = solutionGrid.querySelectorAll('.grid-cell');
-            const iconSize = getIconSize();
-            for (let r = 0; r < gridSize; r++) {
-                for (let c = 0; c < gridSize; c++) {
-                    const cell = solutionCells[r * gridSize + c];
-                    const val = solution[r][c];
-                    cell.innerHTML = val === 1 ? `<span class="cell-icon" style="font-size: ${iconSize}px;">${sun}</span>` : val === 0 ? `<span class="cell-icon" style="font-size: ${iconSize}px;">${moon}</span>` : '';
-                }
-            }
+        // NEW: Check if grid size is even, as the balance rule requires it.
+        if (gridSize % 2 !== 0) {
+            return response.status(400).json({ error: "Invalid puzzle: Grid size must be an even number." });
         }
 
-        function setLoadingState(isLoading) {
-            solveButton.disabled = isLoading;
-            solveButton.textContent = isLoading ? 'Solving...' : 'Solve Puzzle';
-        }
-
-        // Event Listeners
-        gridSizeSelect.addEventListener('change', createGrid);
-        solveButton.addEventListener('click', handleSolve);
-        
-        saveButton.addEventListener('click', () => {
-            const boardState = getBoardState();
-            const dataStr = JSON.stringify(boardState, null, 2);
-            const dataBlob = new Blob([dataStr], {type: "application/json"});
-            const url = URL.createObjectURL(dataBlob);
-            const link = document.createElement('a');
-            link.download = `tango-board-${new Date().toISOString().slice(0,10)}.json`;
-            link.href = url;
-            link.click();
-            URL.revokeObjectURL(url);
+        // Create a map for faster constraint lookups
+        const constraintsMap = new Map();
+        constraints.forEach(c => {
+            constraintsMap.set(`${c.c1.join(',')}-${c.c2.join(',')}`, c.type);
+            constraintsMap.set(`${c.c2.join(',')}-${c.c1.join(',')}`, c.type);
         });
 
-        uploadButton.addEventListener('click', () => fileInput.click());
-        fileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                try {
-                    const data = JSON.parse(event.target.result);
-                    loadBoardState(data);
-                } catch (err) {
-                    alert("Invalid JSON file.");
-                }
-            };
-            reader.readAsText(file);
-            fileInput.value = '';
-        });
+        if (solve(initialGrid, constraintsMap)) {
+            return response.status(200).json({ solution: initialGrid });
+        } else {
+            return response.status(200).json({ solution: null, error: "No solution found." });
+        }
 
-        createGrid();
-    </script>
-</body>
-</html>
+    } catch (error) {
+        console.error('Error in Tango solver function:', error);
+        return response.status(500).json({ error: 'An internal server error occurred.' });
+    }
+}

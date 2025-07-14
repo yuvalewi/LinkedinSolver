@@ -37,9 +37,9 @@
                  <label for="grid-size" class="text-sm font-medium text-gray-300 mr-2">Grid Size:</label>
                  <select id="grid-size" class="bg-gray-900 border-2 border-gray-700 rounded-lg p-2">
                     <option value="4">4x4</option>
-                    <option value="5">5x5</option>
+                    <option value="5" selected>5x5</option>
                     <option value="6" selected>6x6</option>
-                    <option value="7">7x7</option>
+                    <option value="7" selected>7x7</option>
                     <option value="8">8x8</option>
                     <option value="9">9x9</option>
                     <option value="10">10x10</option>
@@ -50,9 +50,15 @@
             <div id="input-grid-container" class="bg-gray-700 p-2 rounded-lg aspect-square">
                 <div id="input-grid" class="w-full h-full grid-container"></div>
             </div>
-            <button id="solve-button" class="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg">
-                Solve Puzzle
-            </button>
+            <!-- Action Buttons -->
+            <div class="mt-6 grid grid-cols-2 gap-4">
+                <button id="solve-button" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg">Solve Puzzle</button>
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="save-button" class="w-full bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 px-4 rounded-lg">Save</button>
+                    <button id="upload-button" class="w-full bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 px-4 rounded-lg">Load</button>
+                    <input type="file" id="file-input" class="hidden" accept=".json">
+                </div>
+            </div>
         </div>
 
         <!-- Solution Section -->
@@ -72,10 +78,19 @@
         const inputGrid = document.getElementById('input-grid');
         const solutionGrid = document.getElementById('solution-grid');
         const solveButton = document.getElementById('solve-button');
+        const saveButton = document.getElementById('save-button');
+        const uploadButton = document.getElementById('upload-button');
+        const fileInput = document.getElementById('file-input');
 
         let gridSize = 6;
         const sun = '☀️';
         const moon = '🌙';
+
+        function getIconSize() {
+            if (gridSize >= 10) return 1.25 * 16;
+            if (gridSize >= 8) return 1.5 * 16;
+            return 2 * 16;
+        }
 
         function createGrid() {
             gridSize = parseInt(gridSizeSelect.value);
@@ -87,10 +102,9 @@
 
             for (let r = 0; r < gridSize; r++) {
                 for (let c = 0; c < gridSize; c++) {
-                    // Create input cell
                     const inputCell = document.createElement('div');
                     inputCell.className = 'grid-cell flex items-center justify-center cursor-pointer';
-                    inputCell.dataset.state = 'empty'; // empty, sun, moon
+                    inputCell.dataset.state = 'empty';
                     inputCell.addEventListener('click', () => {
                         const states = ['empty', 'sun', 'moon'];
                         const currentState = inputCell.dataset.state;
@@ -101,18 +115,19 @@
                     });
                     inputGrid.appendChild(inputCell);
 
-                    // Create solution cell
                     const solutionCell = document.createElement('div');
                     solutionCell.className = 'grid-cell flex items-center justify-center';
                     solutionGrid.appendChild(solutionCell);
 
-                    // Create constraint placers
+                    // Create constraint placers with data attributes for coordinates
                     if (c < gridSize - 1) { // Horizontal constraint
                         const hConstraint = document.createElement('div');
                         hConstraint.className = 'constraint';
                         hConstraint.dataset.type = 'none';
-                        hConstraint.style.width = '20px';
-                        hConstraint.style.height = '10px';
+                        // NEW: Store coordinates directly on the element
+                        hConstraint.dataset.r1 = r; hConstraint.dataset.c1 = c;
+                        hConstraint.dataset.r2 = r; hConstraint.dataset.c2 = c + 1;
+                        hConstraint.style.width = '20px'; hConstraint.style.height = '10px';
                         hConstraint.style.top = `calc(${r * (100 / gridSize)}% + ${(100 / gridSize / 2)}% - 5px)`;
                         hConstraint.style.left = `calc(${(c + 1) * (100 / gridSize)}% - 10px)`;
                         hConstraint.addEventListener('click', cycleConstraint);
@@ -122,8 +137,10 @@
                         const vConstraint = document.createElement('div');
                         vConstraint.className = 'constraint';
                         vConstraint.dataset.type = 'none';
-                        vConstraint.style.width = '10px';
-                        vConstraint.style.height = '20px';
+                        // NEW: Store coordinates directly on the element
+                        vConstraint.dataset.r1 = r; vConstraint.dataset.c1 = c;
+                        vConstraint.dataset.r2 = r + 1; vConstraint.dataset.c2 = c;
+                        vConstraint.style.width = '10px'; vConstraint.style.height = '20px';
                         vConstraint.style.top = `calc(${(r + 1) * (100 / gridSize)}% - 10px)`;
                         vConstraint.style.left = `calc(${c * (100 / gridSize)}% + ${(100 / gridSize / 2)}% - 5px)`;
                         vConstraint.addEventListener('click', cycleConstraint);
@@ -133,12 +150,6 @@
             }
         }
         
-        function getIconSize() {
-            if (gridSize >= 10) return 1.25 * 16; // 1.25rem
-            if (gridSize >= 8) return 1.5 * 16; // 1.5rem
-            return 2 * 16; // 2rem
-        }
-
         function cycleConstraint(e) {
             const el = e.target;
             const types = ['none', 'equal', 'unequal'];
@@ -149,49 +160,87 @@
             else if (nextType === 'unequal') el.textContent = 'X';
             else el.textContent = '';
         }
-
-        async function handleSolve() {
-            // Scrape initial grid state
+        
+        function getBoardState() {
             const initialGrid = [];
             const inputCells = inputGrid.querySelectorAll('.grid-cell');
             for (let r = 0; r < gridSize; r++) {
                 const row = [];
                 for (let c = 0; c < gridSize; c++) {
                     const state = inputCells[r * gridSize + c].dataset.state;
-                    row.push(state === 'sun' ? 1 : state === 'moon' ? 0 : -1); // 1=sun, 0=moon, -1=empty
+                    row.push(state === 'sun' ? 1 : state === 'moon' ? 0 : -1);
                 }
                 initialGrid.push(row);
             }
 
-            // Scrape constraints
             const constraints = [];
+            // NEW: Read coordinates directly from data attributes
             inputGrid.querySelectorAll('.constraint').forEach(el => {
                 if (el.dataset.type !== 'none') {
-                    const isHorizontal = el.style.height === '10px';
-                    const top = parseFloat(el.style.top);
-                    const left = parseFloat(el.style.left);
-                    const r = Math.round((top + 5) / (100 / gridSize) - 0.5);
-                    const c = Math.round((left + (isHorizontal ? 10 : 5)) / (100 / gridSize) - (isHorizontal ? 1 : 0.5));
-                    
-                    const r2 = isHorizontal ? r : r + 1;
-                    const c2 = isHorizontal ? c + 1 : c;
-                    constraints.push({ type: el.dataset.type, c1: [r, c], c2: [r2, c2] });
+                    constraints.push({
+                        type: el.dataset.type,
+                        c1: [parseInt(el.dataset.r1), parseInt(el.dataset.c1)],
+                        c2: [parseInt(el.dataset.r2), parseInt(el.dataset.c2)]
+                    });
                 }
             });
+            return { gridSize, initialGrid, constraints };
+        }
 
+        function loadBoardState(data) {
+            try {
+                gridSizeSelect.value = data.gridSize;
+                createGrid(); // Recreate grid with correct size
+
+                const inputCells = inputGrid.querySelectorAll('.grid-cell');
+                for (let r = 0; r < data.gridSize; r++) {
+                    for (let c = 0; c < data.gridSize; c++) {
+                        const stateVal = data.initialGrid[r][c];
+                        if (stateVal !== -1) {
+                            const cell = inputCells[r * data.gridSize + c];
+                            const state = stateVal === 1 ? 'sun' : 'moon';
+                            cell.dataset.state = state;
+                            const iconSize = getIconSize();
+                            cell.innerHTML = state === 'sun' ? `<span class="cell-icon" style="font-size: ${iconSize}px;">${sun}</span>` : `<span class="cell-icon" style="font-size: ${iconSize}px;">${moon}</span>`;
+                        }
+                    }
+                }
+
+                // NEW: Find constraints by their data attributes, not by style calculation
+                inputGrid.querySelectorAll('.constraint').forEach(el => {
+                    const r1 = parseInt(el.dataset.r1);
+                    const c1 = parseInt(el.dataset.c1);
+                    const r2 = parseInt(el.dataset.r2);
+                    const c2 = parseInt(el.dataset.c2);
+
+                    const foundConstraint = data.constraints.find(con => 
+                        con.c1[0] === r1 && con.c1[1] === c1 && 
+                        con.c2[0] === r2 && con.c2[1] === c2
+                    );
+
+                    if(foundConstraint) {
+                        el.dataset.type = foundConstraint.type;
+                        el.textContent = foundConstraint.type === 'equal' ? '=' : 'X';
+                    }
+                });
+            } catch (e) {
+                alert("Failed to load board. The file may be invalid.");
+                console.error("Load board error:", e);
+            }
+        }
+
+        async function handleSolve() {
+            const boardState = getBoardState();
             setLoadingState(true);
-
             try {
                 const response = await fetch('/api/tango/solve', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ gridSize, initialGrid, constraints })
+                    body: JSON.stringify(boardState)
                 });
-
                 if (!response.ok) throw new Error((await response.json()).error || 'Server Error');
                 const result = await response.json();
                 displaySolution(result.solution);
-
             } catch (error) {
                 alert(`Error: ${error.message}`);
             } finally {
@@ -200,6 +249,10 @@
         }
 
         function displaySolution(solution) {
+            if (!solution) {
+                alert("Solver could not find a solution for this configuration.");
+                return;
+            }
             const solutionCells = solutionGrid.querySelectorAll('.grid-cell');
             const iconSize = getIconSize();
             for (let r = 0; r < gridSize; r++) {
@@ -216,8 +269,39 @@
             solveButton.textContent = isLoading ? 'Solving...' : 'Solve Puzzle';
         }
 
+        // Event Listeners
         gridSizeSelect.addEventListener('change', createGrid);
         solveButton.addEventListener('click', handleSolve);
+        
+        saveButton.addEventListener('click', () => {
+            const boardState = getBoardState();
+            const dataStr = JSON.stringify(boardState, null, 2);
+            const dataBlob = new Blob([dataStr], {type: "application/json"});
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.download = `tango-board-${new Date().toISOString().slice(0,10)}.json`;
+            link.href = url;
+            link.click();
+            URL.revokeObjectURL(url);
+        });
+
+        uploadButton.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const data = JSON.parse(event.target.result);
+                    loadBoardState(data);
+                } catch (err) {
+                    alert("Invalid JSON file.");
+                }
+            };
+            reader.readAsText(file);
+            fileInput.value = '';
+        });
+
         createGrid();
     </script>
 </body>
