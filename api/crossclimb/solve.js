@@ -53,7 +53,7 @@ export default async function handler(request, response) {
                 prompt += ` The word that solves the clue "${activeClue}" MUST be the last word in the final ordered ladder.`;
             }
 
-            prompt += `\nReturn the result in two parts: a list of each clue and its solved word, and a separate list of the final ordered ladder.`;
+            prompt += `\nReturn the result in two parts: a list of each clue and its solved word, and a separate list of the final ordered ladder. The ordered ladder MUST only contains words from the list of solved words.`;
 
             const schema = {
                 type: "OBJECT",
