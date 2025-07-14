@@ -1,13 +1,16 @@
 // Located at /api/crossclimb/solve.js
-// This version uses a two-step "Generator-Refiner" prompt to ensure accuracy.
+// This version includes a fix for the crash and a more robust validation helper.
 
 // --- Helper function to verify the AI's solution ---
 function isLadderValid(solution, activeClueWord) {
-    if (!solution || !solution.ordered_ladder || !solution.solved_words) return false;
+    // Check 1: Ensure the solution and the active word exist before checking them.
+    if (!solution || !solution.ordered_ladder || !solution.solved_words || !activeClueWord) {
+        return false;
+    }
     
     const { ordered_ladder, solved_words } = solution;
     
-    // Check 1: All solved words must be in the ordered ladder
+    // Check 2: All solved words must be in the ordered ladder
     const solvedSet = new Set(solved_words.map(item => item.word.toUpperCase()));
     const ladderSet = new Set(ordered_ladder.map(word => word.toUpperCase()));
     if (solvedSet.size !== ladderSet.size) return false;
@@ -15,10 +18,10 @@ function isLadderValid(solution, activeClueWord) {
         if (!ladderSet.has(word)) return false;
     }
 
-    // Check 2: The active clue's word must be at the bottom
+    // Check 3: The active clue's word must be at the bottom
     if (ordered_ladder[ordered_ladder.length - 1].toUpperCase() !== activeClueWord.toUpperCase()) return false;
 
-    // Check 3: It must be a valid word ladder (one letter difference)
+    // Check 4: It must be a valid word ladder (one letter difference)
     for (let i = 0; i < ordered_ladder.length - 1; i++) {
         let diff = 0;
         const word1 = ordered_ladder[i];
@@ -117,11 +120,9 @@ export default async function handler(request, response) {
 
             // --- STEP 2: VERIFICATION & REFINEMENT ---
             if (isLadderValid(initialSolution, activeClueWord)) {
-                // If the first solution is good, return it.
                 return response.status(200).json(initialSolution);
             }
 
-            // If verification fails, create a refinement prompt.
             const refinerPrompt = `
                 The following proposed solution to a Crossclimb puzzle is invalid.
                 Proposed Solution: ${JSON.stringify(initialSolution)}
@@ -153,7 +154,6 @@ export default async function handler(request, response) {
 
 
         } else if (type === 'final') {
-            // ... (final clue logic remains the same)
             const { finalClue, orderedLadder } = request.body;
             if (!finalClue || !orderedLadder || orderedLadder.length < 2) {
                 return response.status(400).json({ error: 'Missing required fields for final clue.' });
@@ -211,7 +211,8 @@ export default async function handler(request, response) {
                 return response.status(geminiResponse.status).json({ error: `Gemini API failed: ${geminiResponse.statusText}` });
             }
 
-            const result = await response.json();
+            // Corrected bug here
+            const result = await geminiResponse.json();
             const jsonText = result.candidates[0].content.parts[0].text;
             const parsedJson = JSON.parse(jsonText);
 
