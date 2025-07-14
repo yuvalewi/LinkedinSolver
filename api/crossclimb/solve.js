@@ -24,13 +24,12 @@ export default async function handler(request, response) {
         let payload;
 
         if (type === 'ladder') {
-            const { allClues, wordLength, activeClue } = request.body; // activeClue is now optional
+            const { allClues, wordLength, activeClue } = request.body;
             if (!allClues || !Array.isArray(allClues) || allClues.length < 2 || !wordLength) {
                 return response.status(400).json({ error: 'Missing required fields for ladder.' });
             }
 
-            // Build the prompt dynamically based on whether activeClue is provided
-            let prompt = `
+            const prompt = `
                 You are an expert puzzle solver for the LinkedIn game "Crossclimb".
                 The game is a word ladder. You need to find a sequence of words where each word is formed by changing only one letter from the previous word.
                 All words in the ladder must have the same length.
@@ -38,24 +37,18 @@ export default async function handler(request, response) {
                 Here are the puzzle details:
                 - Word Length: ${wordLength}
                 - List of available clues (in no particular order): ${allClues.join('; ')}
+                - The clue for the BOTTOM word in the ladder is: "${activeClue}"
+
+                Your task is to perform two steps with absolute precision:
+                1. Solve each clue to find the corresponding ${wordLength}-letter word. It is critical that you provide a solved word for EVERY clue in the list.
+                2. Arrange ALL of the solved words into a valid word ladder. The word that solves the clue "${activeClue}" MUST be the last word in the final ordered ladder.
+
+                CRITICAL CONSTRAINTS:
+                - The 'ordered_ladder' list MUST contain the exact same words as the words solved from the clues, just in the correct order. Do not invent new words or omit any.
+                - The 'ordered_ladder' MUST be a valid word ladder where each word is only one letter different from the word before it.
+
+                Return the result in two parts: a list of each clue and its solved word, and a separate list of the final, valid, ordered ladder.
             `;
-            
-            if (activeClue) {
-                prompt += `\n- The clue for the BOTTOM word in the ladder is: "${activeClue}"`;
-            }
-
-            prompt += `
-                Your task is to perform three steps:
-                1. Solve each clue to find the corresponding ${wordLength}-letter word. It is critical that you provide a solved word for EVERY clue in the list. 
-                2. Arrange all the solved words into a valid word ladder. Every word in the ladder MUST be formed by changing only one letter from the previous word.
-                3. If the lists does not contain the exact same words, try again.
-                `;
-
-            if (activeClue) {
-                prompt += ` The word that solves the clue "${activeClue}" MUST be the last word in the final ordered ladder.`;
-            }
-
-            prompt += `\nReturn the result in two parts: a list of each clue and its solved word, and a separate list of the final ordered ladder.`;
 
             const schema = {
                 type: "OBJECT",
@@ -67,7 +60,7 @@ export default async function handler(request, response) {
                     },
                     "ordered_ladder": {
                         type: "ARRAY",
-                        description: `An array of the solved ${wordLength}-letter words in the correct word ladder order.`,
+                        description: `An array of the solved ${wordLength}-letter words in the correct word ladder order, following all rules.`,
                         items: { "type": "STRING" }
                     }
                 },
@@ -76,7 +69,7 @@ export default async function handler(request, response) {
 
             payload = {
                 contents: [{ role: "user", parts: [{ text: prompt }] }],
-                generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0.2 }
+                generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0.1 }
             };
 
         } else if (type === 'final') {
@@ -148,7 +141,7 @@ export default async function handler(request, response) {
         return response.status(200).json(parsedJson);
 
     } catch (error) {
-        console.error('Error in serverless function:', error);
+        console.error('Error in Crossclimb solver function:', error);
         return response.status(500).json({ error: 'An internal server error occurred.' });
     }
 }
