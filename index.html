@@ -3,191 +3,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zip Solver</title>
+    <title>LinkedIn Puzzle Solvers</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        .grid-cell {
-            background-color: #4b5563; /* bg-gray-600 */
-            position: relative;
-        }
-        .grid-cell .number-input {
-            width: 100%;
-            height: 100%;
-            background: transparent;
-            border: none;
-            text-align: center;
-            color: white;
-            font-size: 1.5rem;
-            font-weight: bold;
-        }
-        .grid-cell .number-input:focus { outline: none; }
-        #solution-grid .path-line {
-            position: absolute;
-            background-color: #3b82f6; /* blue-500 */
-            z-index: 10;
-            border-radius: 99px;
+        body {
+            font-family: 'Inter', sans-serif;
         }
     </style>
 </head>
-<body class="bg-gray-900 text-white flex justify-center min-h-screen p-4">
-    <div class="w-full max-w-4xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <!-- Input Section -->
-        <div class="bg-gray-800 rounded-xl shadow-2xl p-6 md:p-8">
-            <div class="text-center mb-6">
-                <h1 class="text-3xl md:text-4xl font-bold text-blue-400">Zip Solver</h1>
-                <p class="text-gray-400 mt-2">Click cells to place numbers.</p>
-            </div>
-            <div class="flex items-center justify-center mb-4">
-                 <label for="grid-size" class="text-sm font-medium text-gray-300 mr-2">Grid Size:</label>
-                 <select id="grid-size" class="bg-gray-900 border-2 border-gray-700 rounded-lg p-2 focus:ring-2 focus:ring-blue-500">
-                    <option value="5">5x5</option>
-                    <option value="6" selected>6x6</option>
-                    <option value="7">7x7</option>
-                    <option value="8">8x8</option>
-                    <option value="9">9x9</option>
-                    <option value="10">10x10</option>
-                 </select>
-            </div>
-            <div id="input-grid-container" class="bg-gray-700 p-2 rounded-lg aspect-square">
-                <div id="input-grid" class="w-full h-full grid"></div>
-            </div>
-            <button id="solve-button" class="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg">
-                Solve Puzzle
-            </button>
-        </div>
+<body class="bg-gray-900 text-white flex items-center justify-center min-h-screen p-4">
 
-        <!-- Solution Section -->
-        <div class="bg-gray-800 rounded-xl shadow-2xl p-6 md:p-8">
-             <h2 class="text-2xl font-bold text-center text-blue-300 mb-4">Solution Path</h2>
-             <div id="solution-container" class="bg-gray-700 p-2 rounded-lg aspect-square">
-                <div id="solution-grid" class="w-full h-full grid relative"></div>
-             </div>
+    <div class="w-full max-w-4xl mx-auto text-center">
+        <h1 class="text-4xl md:text-5xl font-bold text-blue-400 mb-4">Puzzle Solvers</h1>
+        <p class="text-gray-400 text-lg mb-10">Select a game to solve.</p>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Pinpoint Game Card -->
+            <a href="/games/pinpoint/" class="bg-gray-800 rounded-xl shadow-lg p-8 hover:bg-gray-700 hover:shadow-2xl transition-all duration-300 ease-in-out transform hover:-translate-y-1">
+                <h2 class="text-2xl font-bold text-white mb-2">Pinpoint</h2>
+                <p class="text-gray-400">Find the category for 5 words.</p>
+            </a>
+
+            <!-- Crossclimb Game Card -->
+            <a href="/games/crossclimb/" class="bg-gray-800 rounded-xl shadow-lg p-8 hover:bg-gray-700 hover:shadow-2xl transition-all duration-300 ease-in-out transform hover:-translate-y-1">
+                <h2 class="text-2xl font-bold text-white mb-2">Crossclimb</h2>
+                <p class="text-gray-400">Solve the word ladder puzzle.</p>
+            </a>
+            
+            <!-- Queens Game Card -->
+            <a href="/games/queens/" class="bg-gray-800 rounded-xl shadow-lg p-8 hover:bg-gray-700 hover:shadow-2xl transition-all duration-300 ease-in-out transform hover:-translate-y-1">
+                <h2 class="text-2xl font-bold text-white mb-2">Queens</h2>
+                <p class="text-gray-400">Solve the logic grid puzzle.</p>
+            </a>
+
+            <!-- Zip Game Card -->
+            <a href="/games/zip/" class="bg-gray-800 rounded-xl shadow-lg p-8 hover:bg-gray-700 hover:shadow-2xl transition-all duration-300 ease-in-out transform hover:-translate-y-1">
+                <h2 class="text-2xl font-bold text-white mb-2">Zip</h2>
+                <p class="text-gray-400">Find the continuous path.</p>
+            </a>
         </div>
     </div>
-     <footer class="fixed bottom-4 text-center w-full">
-        <a href="/games/" class="text-blue-400 hover:text-blue-300 text-sm">&larr; Back to All Games</a>
-    </footer>
 
-    <script>
-        const gridSizeSelect = document.getElementById('grid-size');
-        const inputGrid = document.getElementById('input-grid');
-        const solutionGrid = document.getElementById('solution-grid');
-        const solveButton = document.getElementById('solve-button');
-
-        let gridSize = 6;
-
-        function createGrid() {
-            gridSize = parseInt(gridSizeSelect.value);
-            [inputGrid, solutionGrid].forEach(gridEl => {
-                gridEl.innerHTML = '';
-                gridEl.style.gridTemplateColumns = `repeat(${gridSize}, 1fr)`;
-                gridEl.style.gridTemplateRows = `repeat(${gridSize}, 1fr)`;
-            });
-
-            for (let r = 0; r < gridSize; r++) {
-                for (let c = 0; c < gridSize; c++) {
-                    const inputCell = document.createElement('div');
-                    inputCell.className = 'grid-cell border border-gray-500';
-                    const input = document.createElement('input');
-                    input.type = 'number';
-                    input.className = 'number-input';
-                    inputCell.appendChild(input);
-                    inputGrid.appendChild(inputCell);
-
-                    const solutionCell = document.createElement('div');
-                    solutionCell.className = 'grid-cell border border-gray-500';
-                    solutionGrid.appendChild(solutionCell);
-                }
-            }
-        }
-
-        async function handleSolve() {
-            const numbers = {};
-            const inputCells = inputGrid.querySelectorAll('.grid-cell');
-            for (let r = 0; r < gridSize; r++) {
-                for (let c = 0; c < gridSize; c++) {
-                    const cell = inputCells[r * gridSize + c];
-                    const num = parseInt(cell.querySelector('input').value);
-                    if (!isNaN(num)) {
-                        numbers[num] = [r, c];
-                    }
-                }
-            }
-
-            if (Object.keys(numbers).length < 2) {
-                alert('Please place at least two numbers on the grid.');
-                return;
-            }
-
-            setLoadingState(true);
-
-            try {
-                const response = await fetch('/api/zip/solve', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ gridSize, numbers })
-                });
-
-                if (!response.ok) throw new Error((await response.json()).error || 'Server Error');
-                const result = await response.json();
-                displaySolution(result.path);
-
-            } catch (error) {
-                alert(`Error: ${error.message}`);
-            } finally {
-                setLoadingState(false);
-            }
-        }
-
-        function displaySolution(path) {
-            const existingLines = solutionGrid.querySelectorAll('.path-line');
-            existingLines.forEach(line => line.remove());
-
-            if (!path || path.length === 0) {
-                alert('Solver could not find a solution.');
-                return;
-            }
-
-            const cellWidth = solutionGrid.clientWidth / gridSize;
-            const cellHeight = solutionGrid.clientHeight / gridSize;
-
-            for (let i = 0; i < path.length - 1; i++) {
-                const [r1, c1] = path[i];
-                const [r2, c2] = path[i+1];
-
-                const line = document.createElement('div');
-                line.className = 'path-line';
-                
-                const x1 = c1 * cellWidth + cellWidth / 2;
-                const y1 = r1 * cellHeight + cellHeight / 2;
-                const x2 = c2 * cellWidth + cellWidth / 2;
-                const y2 = r2 * cellHeight + cellHeight / 2;
-
-                const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
-                const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
-
-                Object.assign(line.style, {
-                    left: `${x1}px`,
-                    top: `${y1}px`,
-                    width: `${length}px`,
-                    height: '6px',
-                    transformOrigin: '0 50%',
-                    transform: `rotate(${angle}deg)`
-                });
-                solutionGrid.appendChild(line);
-            }
-        }
-
-        function setLoadingState(isLoading) {
-            solveButton.disabled = isLoading;
-            solveButton.textContent = isLoading ? 'Solving...' : 'Solve Puzzle';
-        }
-
-        gridSizeSelect.addEventListener('change', createGrid);
-        solveButton.addEventListener('click', handleSolve);
-        createGrid();
-    </script>
 </body>
 </html>
