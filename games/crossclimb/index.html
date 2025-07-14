@@ -8,7 +8,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; }
-        .result-item { animation: fadeIn 0.5s ease-out forwards; }
+        .result-item, #final-clues-section { animation: fadeIn 0.5s ease-out forwards; }
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
@@ -50,6 +50,7 @@
     <script>
         const solveButton = document.getElementById('solve-button');
         const resultsContainer = document.getElementById('results-container');
+        let currentLadder = []; // Variable to store the solved ladder
 
         solveButton.addEventListener('click', handleSolve);
 
@@ -63,14 +64,13 @@
                 return;
             }
 
-            setLoadingState(true);
-            resultsContainer.innerHTML = '<p class="text-center text-gray-400">Solving...</p>';
+            setLoadingState(true, 'solve-button', 'Solving...');
 
             try {
                 const response = await fetch('/api/crossclimb/solve', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ allClues, wordLength: parseInt(wordLength) })
+                    body: JSON.stringify({ type: 'ladder', allClues, wordLength: parseInt(wordLength) })
                 });
 
                 if (!response.ok) {
@@ -79,26 +79,29 @@
                 }
 
                 const result = await response.json();
+                currentLadder = result.ordered_ladder || []; // Store the ladder
                 
-                // Re-order the solved words to match the user's input order
                 const clueToWordMap = new Map(result.solved_words.map(item => [item.clue, item.word]));
                 const sortedSolvedWords = allClues.map(clue => ({
                     clue: clue,
                     word: clueToWordMap.get(clue) || '???'
                 }));
 
-                displayResults(sortedSolvedWords, result.ordered_ladder);
+                displayResults(sortedSolvedWords, currentLadder);
 
             } catch (error) {
                 displayMessage(error.message);
             } finally {
-                setLoadingState(false);
+                setLoadingState(false, 'solve-button', 'Solve Ladder');
             }
         }
         
-        function setLoadingState(isLoading) {
-            solveButton.disabled = isLoading;
-            solveButton.textContent = isLoading ? 'Solving...' : 'Solve Ladder';
+        function setLoadingState(isLoading, buttonId, loadingText) {
+            const button = document.getElementById(buttonId);
+            if (button) {
+                button.disabled = isLoading;
+                button.textContent = isLoading ? loadingText : button.dataset.originalText;
+            }
         }
 
         function displayResults(solved_words, ordered_ladder) {
@@ -109,62 +112,122 @@
                 return;
             }
 
-            // Create a color map based on the final ladder order
             const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6'];
             const wordToColor = new Map();
             ordered_ladder.forEach((word, index) => {
                 wordToColor.set(word.toUpperCase(), colors[index % colors.length]);
             });
 
-            // --- Part 1: Display Solved Words (in user's input order) ---
+            // Part 1: Solved Words
             const solvedWordsDiv = document.createElement('div');
             solvedWordsDiv.className = 'result-item';
-            
-            const solvedTitle = document.createElement('h3');
-            solvedTitle.className = 'text-xl font-semibold text-center mb-3 text-blue-300';
-            solvedTitle.textContent = '1. Solved Words';
-            solvedWordsDiv.appendChild(solvedTitle);
-
-            const solvedList = document.createElement('div');
-            solvedList.className = 'grid grid-cols-1 gap-3 bg-gray-700 p-4 rounded-lg';
-            solved_words.forEach(item => {
-                const color = wordToColor.get(item.word.toUpperCase()) || '#6b7280'; // gray for unknown
-                const clueDiv = document.createElement('div');
-                clueDiv.className = 'flex items-center gap-3 text-sm';
-                clueDiv.innerHTML = `
-                    <div class="w-2 h-5 rounded" style="background-color: ${color};"></div>
-                    <span class="flex-1 text-gray-300">${item.clue}</span>
-                    <span class="font-semibold text-white tracking-wider">${item.word.toUpperCase()}</span>
-                `;
-                solvedList.appendChild(clueDiv);
-            });
-            solvedWordsDiv.appendChild(solvedList);
+            solvedWordsDiv.innerHTML = `
+                <h3 class="text-xl font-semibold text-center mb-3 text-blue-300">1. Solved Words</h3>
+                <div class="grid grid-cols-1 gap-3 bg-gray-700 p-4 rounded-lg">
+                    ${solved_words.map(item => `
+                        <div class="flex items-center gap-3 text-sm">
+                            <div class="w-2 h-5 rounded" style="background-color: ${wordToColor.get(item.word.toUpperCase()) || '#6b7280'};"></div>
+                            <span class="flex-1 text-gray-300">${item.clue}</span>
+                            <span class="font-semibold text-white tracking-wider">${item.word.toUpperCase()}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
             resultsContainer.appendChild(solvedWordsDiv);
 
-            // --- Part 2: Display Ordered Ladder ---
+            // Part 2: Ordered Ladder
             const orderedLadderDiv = document.createElement('div');
             orderedLadderDiv.className = 'result-item';
             orderedLadderDiv.style.animationDelay = '200ms';
-
-            const orderedTitle = document.createElement('h3');
-            orderedTitle.className = 'text-xl font-semibold text-center mb-3 text-blue-300';
-            orderedTitle.textContent = '2. Correct Order';
-            orderedLadderDiv.appendChild(orderedTitle);
-            
-            const ladderDiv = document.createElement('div');
-            ladderDiv.className = 'flex flex-col items-center space-y-2 bg-gray-700 p-4 rounded-lg';
-            ordered_ladder.forEach((word, index) => {
-                const color = wordToColor.get(word.toUpperCase()) || '#6b7280';
-                const rung = document.createElement('div');
-                rung.className = 'w-full text-center p-2 bg-gray-800 rounded-md font-mono tracking-widest text-xl flex items-center gap-3';
-                rung.innerHTML = `
-                    <div class="w-2 h-5 rounded" style="background-color: ${color};"></div>
-                    <span class="flex-1">${word.toUpperCase()}</span>
-                `;
-                ladderDiv.appendChild(rung);
-            });
-            orderedLadderDiv.appendChild(ladderDiv);
+            orderedLadderDiv.innerHTML = `
+                <h3 class="text-xl font-semibold text-center mb-3 text-blue-300">2. Correct Order</h3>
+                <div class="flex flex-col items-center space-y-2 bg-gray-700 p-4 rounded-lg">
+                    ${ordered_ladder.map(word => `
+                        <div class="w-full text-center p-2 bg-gray-800 rounded-md font-mono tracking-widest text-xl flex items-center gap-3">
+                            <div class="w-2 h-5 rounded" style="background-color: ${wordToColor.get(word.toUpperCase()) || '#6b7280'};"></div>
+                            <span class="flex-1">${word.toUpperCase()}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
             resultsContainer.appendChild(orderedLadderDiv);
+
+            // Part 3: Final Clues Section
+            const finalCluesDiv = document.createElement('div');
+            finalCluesDiv.id = 'final-clues-section';
+            finalCluesDiv.className = 'result-item border-t-2 border-gray-700 pt-6';
+            finalCluesDiv.style.animationDelay = '400ms';
+            finalCluesDiv.innerHTML = `
+                <h3 class="text-xl font-semibold text-center mb-4 text-blue-300">3. Final Clues</h3>
+                <div class="space-y-4">
+                    <div>
+                        <label for="final-clue-1" class="block text-sm font-medium text-gray-300">Clue for Top/Bottom Word</label>
+                        <input type="text" id="final-clue-1" class="mt-1 w-full p-2 bg-gray-900 border-2 border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label for="final-clue-2" class="block text-sm font-medium text-gray-300">Clue for Other Top/Bottom Word</label>
+                        <input type="text" id="final-clue-2" class="mt-1 w-full p-2 bg-gray-900 border-2 border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    </div>
+                </div>
+                <button id="solve-final-button" data-original-text="Solve Final Clues" class="w-full mt-6 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition-all">
+                    Solve Final Clues
+                </button>
+                <div id="final-results-container" class="mt-4"></div>
+            `;
+            resultsContainer.appendChild(finalCluesDiv);
+            document.getElementById('solve-final-button').addEventListener('click', handleFinalSolve);
+        }
+
+        async function handleFinalSolve() {
+            const finalClue1 = document.getElementById('final-clue-1').value;
+            const finalClue2 = document.getElementById('final-clue-2').value;
+            const finalResultsContainer = document.getElementById('final-results-container');
+
+            if (!finalClue1 || !finalClue2) {
+                finalResultsContainer.innerHTML = `<p class="text-red-400 text-center">Please enter both final clues.</p>`;
+                return;
+            }
+
+            setLoadingState(true, 'solve-final-button', 'Solving...');
+
+            try {
+                const response = await fetch('/api/crossclimb/solve', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        type: 'final', 
+                        finalClues: [finalClue1, finalClue2],
+                        orderedLadder: currentLadder 
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `Server Error: ${response.status}`);
+                }
+
+                const result = await response.json();
+                displayFinalResults(result.final_solution);
+
+            } catch (error) {
+                finalResultsContainer.innerHTML = `<p class="text-red-400 text-center">${error.message}</p>`;
+            } finally {
+                setLoadingState(false, 'solve-final-button', 'Solve Final Clues');
+            }
+        }
+
+        function displayFinalResults(finalSolution) {
+            const finalResultsContainer = document.getElementById('final-results-container');
+            if (!finalSolution || finalSolution.length === 0) {
+                finalResultsContainer.innerHTML = `<p class="text-red-400 text-center">Could not solve final clues.</p>`;
+                return;
+            }
+            finalResultsContainer.innerHTML = `
+                <div class="bg-gray-700 p-4 rounded-lg text-center">
+                    <p class="text-gray-300">Final Words:</p>
+                    <p class="text-2xl font-bold text-green-400 tracking-wider">${finalSolution.join(' & ')}</p>
+                </div>
+            `;
         }
 
         function displayMessage(message) {
