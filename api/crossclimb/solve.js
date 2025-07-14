@@ -33,22 +33,35 @@ export default async function handler(request, response) {
             - Word Length: ${wordLength}
             - List of available clues (in no particular order): ${allClues.join('; ')}
             
-            Your task is to:
-            1. Solve each clue to find the corresponding ${wordLength}-letter word.
-            2. Determine the correct order of these words to form a valid word ladder.
-            3. Return the final, ordered word ladder as a list of words. The ladder typically has 5 words.
+            Your task is to perform two steps:
+            1. First, for each clue provided, determine the corresponding ${wordLength}-letter word it solves to.
+            2. Second, take all the solved words and arrange them into the correct word ladder sequence.
+
+            Return the result in two parts: a list of each clue and its solved word, and a separate list of the final ordered ladder.
         `;
 
         const schema = {
             type: "OBJECT",
             properties: {
-                "solution": {
+                "solved_words": {
                     type: "ARRAY",
-                    description: `An array of ${wordLength}-letter words representing the solved and correctly ordered ladder.`,
+                    description: "An array of objects, each containing a clue and its corresponding solved word.",
+                    items: {
+                        type: "OBJECT",
+                        properties: {
+                            "clue": { "type": "STRING" },
+                            "word": { "type": "STRING" }
+                        },
+                        required: ["clue", "word"]
+                    }
+                },
+                "ordered_ladder": {
+                    type: "ARRAY",
+                    description: `An array of the solved ${wordLength}-letter words in the correct word ladder order.`,
                     items: { "type": "STRING" }
                 }
             },
-            required: ["solution"]
+            required: ["solved_words", "ordered_ladder"]
         };
         
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
@@ -74,7 +87,7 @@ export default async function handler(request, response) {
         const jsonText = result.candidates[0].content.parts[0].text;
         const parsedJson = JSON.parse(jsonText);
 
-        return response.status(200).json({ solution: parsedJson.solution });
+        return response.status(200).json(parsedJson);
 
     } catch (error) {
         console.error('Error in serverless function:', error);
