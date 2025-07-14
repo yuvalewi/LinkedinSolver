@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Queens Solver</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .grid-cell { transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out; }
+        .grid-cell:active { transform: scale(0.95); }
+        .color-palette-btn.active {
+            transform: scale(1.1);
+            box-shadow: 0 0 0 3px white;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex justify-center min-h-screen p-4">
+    <div class="w-full max-w-2xl mx-auto">
+        <div class="text-center mb-6">
+            <h1 class="text-3xl md:text-4xl font-bold text-blue-400">Queens Solver</h1>
+            <p class="text-gray-400 mt-2">Recreate the puzzle grid and click solve.</p>
+        </div>
+
+        <!-- Controls -->
+        <div class="bg-gray-800 rounded-xl shadow-2xl p-4 md:p-6 mb-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div class="flex items-center gap-2">
+                <label for="grid-size" class="text-sm font-medium text-gray-300">Grid Size:</label>
+                <select id="grid-size" class="bg-gray-900 border-2 border-gray-700 rounded-lg p-2 focus:ring-2 focus:ring-blue-500">
+                    <option value="6">6x6</option>
+                    <option value="8" selected>8x8</option>
+                    <option value="10">10x10</option>
+                </select>
+            </div>
+            <div id="color-palette" class="flex flex-wrap justify-center gap-2">
+                <!-- Color palette will be generated here -->
+            </div>
+        </div>
+
+        <!-- Grid -->
+        <div id="grid-container" class="bg-gray-800 rounded-xl shadow-2xl p-4 aspect-square max-w-lg mx-auto"></div>
+
+        <!-- Action Button -->
+        <button id="solve-button" data-original-text="Solve Puzzle" class="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-all transform hover:scale-105">
+            Solve Puzzle
+        </button>
+        
+        <footer class="text-center mt-6">
+            <a href="/games/" class="text-blue-400 hover:text-blue-300">&larr; Back to All Games</a>
+        </footer>
+    </div>
+
+    <script>
+        const gridSizeSelect = document.getElementById('grid-size');
+        const gridContainer = document.getElementById('grid-container');
+        const colorPaletteContainer = document.getElementById('color-palette');
+        const solveButton = document.getElementById('solve-button');
+
+        const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280'];
+        let selectedColor = colors[0];
+        let gridSize = 8;
+        let gridData = {};
+
+        function createPalette() {
+            colorPaletteContainer.innerHTML = '';
+            colors.slice(0, gridSize).forEach((color, index) => {
+                const button = document.createElement('button');
+                button.className = 'color-palette-btn w-8 h-8 rounded-full border-2 border-transparent transition-transform';
+                button.style.backgroundColor = color;
+                button.dataset.color = color;
+                if (color === selectedColor) button.classList.add('active');
+                
+                button.addEventListener('click', () => {
+                    selectedColor = color;
+                    document.querySelectorAll('.color-palette-btn').forEach(btn => btn.classList.remove('active'));
+                    button.classList.add('active');
+                });
+                colorPaletteContainer.appendChild(button);
+            });
+        }
+
+        function createGrid() {
+            gridSize = parseInt(gridSizeSelect.value);
+            gridContainer.innerHTML = '';
+            gridContainer.style.gridTemplateColumns = `repeat(${gridSize}, 1fr)`;
+            gridContainer.style.display = 'grid';
+            gridData = {};
+
+            for (let r = 0; r < gridSize; r++) {
+                for (let c = 0; c < gridSize; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'grid-cell w-full h-full aspect-square border border-gray-600 flex items-center justify-center cursor-pointer';
+                    cell.dataset.row = r;
+                    cell.dataset.col = c;
+                    cell.dataset.color = 'none';
+
+                    cell.addEventListener('click', () => {
+                        cell.style.backgroundColor = selectedColor;
+                        cell.dataset.color = selectedColor;
+                    });
+                    gridContainer.appendChild(cell);
+                }
+            }
+            createPalette();
+        }
+
+        async function handleSolve() {
+            const regions = {};
+            const cells = document.querySelectorAll('.grid-cell');
+            cells.forEach(cell => {
+                const color = cell.dataset.color;
+                if (color !== 'none') {
+                    if (!regions[color]) regions[color] = [];
+                    regions[color].push([parseInt(cell.dataset.row), parseInt(cell.dataset.col)]);
+                }
+            });
+
+            if (Object.keys(regions).length !== gridSize) {
+                alert('Please ensure all regions are painted and there is one region for each color.');
+                return;
+            }
+
+            setLoadingState(true);
+
+            try {
+                const response = await fetch('/api/queens/solve', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ gridSize, regions })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Server Error');
+                }
+                const result = await response.json();
+                displaySolution(result.solution);
+
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            } finally {
+                setLoadingState(false);
+            }
+        }
+
+        function displaySolution(solution) {
+            // First, clear any existing queens
+            document.querySelectorAll('.queen-icon').forEach(q => q.remove());
+
+            // Then, add new queens
+            solution.forEach(([row, col]) => {
+                const cell = document.querySelector(`.grid-cell[data-row='${row}'][data-col='${col}']`);
+                if (cell) {
+                    const queen = document.createElement('span');
+                    queen.className = 'queen-icon text-4xl';
+                    queen.innerHTML = '♕'; // Queen symbol
+                    cell.appendChild(queen);
+                }
+            });
+        }
+
+        function setLoadingState(isLoading) {
+            solveButton.disabled = isLoading;
+            solveButton.textContent = isLoading ? 'Solving...' : solveButton.dataset.originalText;
+        }
+
+        gridSizeSelect.addEventListener('change', createGrid);
+        solveButton.addEventListener('click', handleSolve);
+
+        // Initial setup
+        createGrid();
+    </script>
+</body>
+</html>
