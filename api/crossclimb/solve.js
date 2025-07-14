@@ -151,21 +151,22 @@ export default async function handler(request, response) {
 
             // If verification fails, create a refinement prompt.
             const refinerPrompt = `
-                The previous proposed solution to a Crossclimb puzzle was invalid.
-                Previous Proposed Solution: ${JSON.stringify(initialSolution)}
+                You are an expert puzzle solver. A previous attempt to solve a Crossclimb puzzle produced a result that was close, but contained some logical errors. Your task is to re-solve the puzzle correctly.
 
-                Please re-solve the entire puzzle from the beginning, using the previous solution as a hint.
+                Use the previous attempt as a strong hint, as it is likely very close to the correct answer, but do not be bound by it. You must find the single, logically correct solution.
 
-                Original Puzzle Details:
+                Previous (potentially flawed) attempt: ${JSON.stringify(initialSolution)}
+
+                Here are the absolute rules of the puzzle you must follow:
                 - Word Length: ${wordLength}
                 - List of all clues: ${allClues.join('; ')}
                 - The clue for the BOTTOM word is: "${activeClue}"
 
                 Your new solution MUST follow these rules exactly:
-                1. Solve every single clue from the list.
-                2. The word for the clue "${activeClue}" must be the final word in the ordered_ladder.
+                1. Solve every single clue from the list correctly. The previous attempt may have made a mistake here.
+                2. The word that solves the clue "${activeClue}" must be the final word in the ordered_ladder.
                 3. The ordered_ladder must be a valid word ladder where each word changes by only one letter.
-                4. The ordered_ladder must contain the same words as the solved_words list.
+                4. The ordered_ladder must contain the exact same words as your newly solved words, just in the correct order.
 
                 Provide a completely new, corrected, and valid solution.
             `;
