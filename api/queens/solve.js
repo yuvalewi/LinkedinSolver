@@ -1,28 +1,15 @@
 // Located at /api/queens/solve.js
-// This version includes a corrected base case to ensure all regions are filled.
+// This version uses a corrected backtracking algorithm for the "no touching" rule.
 
 // --- Algorithmic Solver ---
 
 // A helper function to check if it's safe to place a queen at board[row][col]
 function isSafe(row, col, board, regionsMap, gridSize) {
-    // Check this row on the left side
+    // Check this row on left side
     for (let i = 0; i < col; i++) {
         if (board[row][i]) return false;
     }
 
-    // Check upper diagonal on left side
-    for (let i = row, j = col; i >= 0 && j >= 0; i--, j--) {
-        if (board[i][j]) return false;
-    }
-
-    // Check lower diagonal on left side
-    for (let i = row, j = col; j < gridSize && i >= 0; i--, j++) {
-         if (board[i][j]) return false;
-    }
-    for (let i = row, j = col; j >= 0 && i < gridSize; i++, j--) {
-        if (board[i][j]) return false;
-    }
-    
     // Check if another queen is in the same region
     const currentRegion = regionsMap.get(`${row},${col}`);
     for(let r = 0; r < gridSize; r++) {
@@ -33,26 +20,27 @@ function isSafe(row, col, board, regionsMap, gridSize) {
         }
     }
 
+    // NEW: Check only for adjacent queens (the "no touching" rule)
+    // This is more accurate than the standard N-Queens diagonal check.
+    for (let r = 0; r < gridSize; r++) {
+        for (let c = 0; c < col; c++) {
+            if (board[r][c]) {
+                // Check if the new queen at (row, col) is adjacent to the existing queen at (r, c)
+                if (Math.abs(row - r) <= 1 && Math.abs(col - c) <= 1) {
+                    return false;
+                }
+            }
+        }
+    }
+
     return true;
 }
 
 // The main recursive backtracking function
 function solveNQueensUtil(board, col, regionsMap, gridSize) {
-    // Base case: If all queens are placed, check if the solution is valid
+    // Base case: If all queens are placed, the solution is found
     if (col >= gridSize) {
-        // NEW: Final check to ensure every region has exactly one queen.
-        const regionCounts = {};
-        for (let r = 0; r < gridSize; r++) {
-            for (let c = 0; c < gridSize; c++) {
-                if (board[r][c]) {
-                    const region = regionsMap.get(`${r},${c}`);
-                    regionCounts[region] = (regionCounts[region] || 0) + 1;
-                }
-            }
-        }
-        // A valid solution must have used every region exactly once.
-        const allRegionsValid = Object.values(regionCounts).every(count => count === 1);
-        return allRegionsValid && Object.keys(regionCounts).length === gridSize;
+        return true;
     }
 
     // Consider this column and try placing this queen in all rows one by one
