@@ -24,8 +24,8 @@ export default async function handler(request, response) {
         let payload;
 
         if (type === 'ladder') {
-            const { allClues, wordLength } = request.body;
-            if (!allClues || !Array.isArray(allClues) || allClues.length < 2 || !wordLength) {
+            const { allClues, wordLength, activeClue } = request.body;
+            if (!allClues || !Array.isArray(allClues) || allClues.length < 2 || !wordLength || !activeClue) {
                 return response.status(400).json({ error: 'Missing required fields for ladder.' });
             }
 
@@ -37,10 +37,11 @@ export default async function handler(request, response) {
                 Here are the puzzle details:
                 - Word Length: ${wordLength}
                 - List of available clues (in no particular order): ${allClues.join('; ')}
-                
+                - The clue for the BOTTOM word in the ladder is: "${activeClue}"
+
                 Your task is to perform two steps:
-                1. First, for each clue provided, determine the corresponding ${wordLength}-letter word it solves to.
-                2. Second, take all the solved words and arrange them into the correct word ladder sequence.
+                1. Solve each clue to find the corresponding ${wordLength}-letter word.
+                2. Arrange the solved words into a valid word ladder. The word that solves the clue "${activeClue}" MUST be the last word in the final ordered ladder.
 
                 Return the result in two parts: a list of each clue and its solved word, and a separate list of the final ordered ladder.
             `;
@@ -76,7 +77,7 @@ export default async function handler(request, response) {
             const topWord = orderedLadder[0];
             const bottomWord = orderedLadder[orderedLadder.length - 1];
             const middleWords = orderedLadder.slice(1, -1);
-            const wordLength = topWord.length; // Determine word length from the ladder
+            const wordLength = topWord.length;
 
             const prompt = `
                 You are an expert puzzle solver for the final step of the LinkedIn game "Crossclimb".
