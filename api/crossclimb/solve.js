@@ -1,39 +1,59 @@
 // Located at /api/crossclimb/solve.js
-// This version includes a fix for the crash and a more robust validation helper.
+// This version uses a two-step "Generate & Verify" process for the ladder.
 
-// --- Helper function to verify the AI's solution ---
-function isLadderValid(solution, activeClueWord) {
-    // Check 1: Ensure the solution and the active word exist before checking them.
-    if (!solution || !solution.ordered_ladder || !solution.solved_words || !activeClueWord) {
-        return false;
+// --- Helper function to programmatically verify the AI's ladder solution ---
+function verifyLadder(solution, allClues, activeClue) {
+    const errors = [];
+    if (!solution || !solution.ordered_ladder || !solution.solved_words) {
+        errors.push("The basic structure of the solution is missing.");
+        return errors;
     }
     
     const { ordered_ladder, solved_words } = solution;
-    
-    // Check 2: All solved words must be in the ordered ladder
-    const solvedSet = new Set(solved_words.map(item => item.word.toUpperCase()));
-    const ladderSet = new Set(ordered_ladder.map(word => word.toUpperCase()));
-    if (solvedSet.size !== ladderSet.size) return false;
-    for (const word of solvedSet) {
-        if (!ladderSet.has(word)) return false;
+
+    // Check 1: Did the AI solve for every clue?
+    if (solved_words.length !== allClues.length) {
+        errors.push(`The AI only solved for ${solved_words.length} out of ${allClues.length} clues.`);
     }
 
-    // Check 3: The active clue's word must be at the bottom
-    if (ordered_ladder[ordered_ladder.length - 1].toUpperCase() !== activeClueWord.toUpperCase()) return false;
+    // Check 2: Are all solved words present in the final ladder?
+    const solvedSet = new Set(solved_words.map(item => item.word.toUpperCase()));
+    const ladderSet = new Set(ordered_ladder.map(word => word.toUpperCase()));
+    if (solvedSet.size !== ladderSet.size) {
+        errors.push("The list of solved words and the ordered ladder do not contain the same set of words.");
+    }
+    for (const word of solvedSet) {
+        if (!ladderSet.has(word)) {
+            errors.push(`The word "${word}" is in the solved list but missing from the ordered ladder.`);
+        }
+    }
 
-    // Check 4: It must be a valid word ladder (one letter difference)
+    // Check 3: Is the active clue's word at the bottom?
+    const activeClueWord = solved_words.find(sw => sw.clue === activeClue)?.word;
+    if (!activeClueWord) {
+        errors.push(`The AI failed to solve for the active clue: "${activeClue}".`);
+    } else if (ordered_ladder[ordered_ladder.length - 1].toUpperCase() !== activeClueWord.toUpperCase()) {
+        errors.push(`The word for the active clue ("${activeClueWord}") is not at the bottom of the ladder.`);
+    }
+
+    // Check 4: Is it a valid word ladder (one letter difference)?
     for (let i = 0; i < ordered_ladder.length - 1; i++) {
         let diff = 0;
         const word1 = ordered_ladder[i];
         const word2 = ordered_ladder[i+1];
-        if (word1.length !== word2.length) return false;
-        for (let j = 0; j < word1.length; j++) {
-            if (word1[j] !== word2[j]) diff++;
+        if (word1.length !== word2.length) {
+            errors.push(`Words "${word1}" and "${word2}" have different lengths.`);
+            continue;
         }
-        if (diff !== 1) return false;
+        for (let j = 0; j < word1.length; j++) {
+            if (word1[j].toUpperCase() !== word2[j].toUpperCase()) diff++;
+        }
+        if (diff !== 1) {
+            errors.push(`The words "${word1}" and "${word2}" are not one letter apart.`);
+        }
     }
 
-    return true;
+    return errors;
 }
 
 
@@ -78,10 +98,15 @@ export default async function handler(request, response) {
                 - The clue for the BOTTOM word in the ladder is: "${activeClue}"
 
                 Your task is to perform two steps with absolute precision:
-                1. Solve each clue to find the corresponding ${wordLength}-letter word. Provide a solved word for EVERY clue.
-                2. Arrange ALL solved words into a valid word ladder. The word for "${activeClue}" MUST be at the bottom.
+                1. Solve each clue to find the corresponding ${wordLength}-letter word. It is critical that you provide a solved word for EVERY clue in the list.
+                2. Arrange ALL of the solved words into a valid word ladder.
 
-                Return the result in two parts: a list of each clue and its solved word, and a separate list of the final ordered ladder.
+                CRITICAL CONSTRAINTS:
+                - The word that solves the clue "${activeClue}" MUST be the last word in the final ordered ladder. You should determine this word first and then build the ladder upwards from it.
+                - The 'ordered_ladder' list MUST contain the exact same words as the words solved from the clues, just in the correct order. Do not invent new words or omit any.
+                - The 'ordered_ladder' MUST be a valid word ladder where each word is only one letter different from the word before it.
+
+                Return the result in two parts: a list of each clue and its solved word, and a separate list of the final, valid, ordered ladder.
             `;
 
             const schema = {
@@ -94,7 +119,7 @@ export default async function handler(request, response) {
                     },
                     "ordered_ladder": {
                         type: "ARRAY",
-                        description: `An array of the solved ${wordLength}-letter words in the correct word ladder order.`,
+                        description: `An array of the solved ${wordLength}-letter words in the correct word ladder order, following all rules.`,
                         items: { "type": "STRING" }
                     }
                 },
@@ -103,36 +128,47 @@ export default async function handler(request, response) {
 
             const generatorPayload = {
                 contents: [{ role: "user", parts: [{ text: generatorPrompt }] }],
-                generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0.2 }
+                generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0.1 }
             };
             
-            // --- First API Call ---
             const genResponse = await fetch(apiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(generatorPayload)
             });
 
-            if (!genResponse.ok) throw new Error(`Gemini API failed on generate: ${genResponse.statusText}`);
+            if (!genResponse.ok) throw new Error(`Gemini API failed: ${genResponse.statusText}`);
             
             let initialSolution = JSON.parse((await genResponse.json()).candidates[0].content.parts[0].text);
-            const activeClueWord = initialSolution.solved_words.find(sw => sw.clue === activeClue)?.word;
-
+            
             // --- STEP 2: VERIFICATION & REFINEMENT ---
-            if (isLadderValid(initialSolution, activeClueWord)) {
+            const validationErrors = verifyLadder(initialSolution, allClues, activeClue);
+
+            if (validationErrors.length === 0) {
+                // If the first solution is good, return it.
                 return response.status(200).json(initialSolution);
             }
 
+            // If verification fails, create a refinement prompt.
             const refinerPrompt = `
-                The following proposed solution to a Crossclimb puzzle is invalid.
-                Proposed Solution: ${JSON.stringify(initialSolution)}
+                The previous proposed solution to a Crossclimb puzzle was invalid.
+                Previous Proposed Solution: ${JSON.stringify(initialSolution)}
+                List of errors found by my verification script: ${validationErrors.join('; ')}
 
-                The rules are:
-                1. The 'ordered_ladder' must contain the exact same words as those in 'solved_words'.
-                2. The word for the clue "${activeClue}" must be at the bottom of the ladder.
-                3. The ladder must be valid, with each word changing by only one letter from the previous one.
+                Please re-solve the entire puzzle from the beginning, paying careful attention to the errors found and all of the original rules.
 
-                Please analyze the proposed solution, identify the errors, and provide a corrected, valid solution that follows all rules.
+                Original Puzzle Details:
+                - Word Length: ${wordLength}
+                - List of all clues: ${allClues.join('; ')}
+                - The clue for the BOTTOM word is: "${activeClue}"
+
+                Your new solution MUST follow these rules exactly:
+                1. Solve every single clue from the list.
+                2. The word for the clue "${activeClue}" must be the final word in the ordered_ladder.
+                3. The ordered_ladder must be a valid word ladder where each word changes by only one letter.
+                4. The ordered_ladder must contain the same words as the solved_words list.
+
+                Provide a completely new, corrected, and valid solution.
             `;
 
             const refinerPayload = {
@@ -195,7 +231,7 @@ export default async function handler(request, response) {
             };
 
             payload = {
-                contents: [{ role: "user", parts: [{ text: prompt }] }],
+                contents: [{ role: "user", parts: [{ text: refinerPrompt }] }],
                 generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0.2 }
             };
             
@@ -205,13 +241,8 @@ export default async function handler(request, response) {
                 body: JSON.stringify(payload)
             });
 
-            if (!geminiResponse.ok) {
-                const errorText = await geminiResponse.text();
-                console.error("Gemini API Error:", errorText);
-                return response.status(geminiResponse.status).json({ error: `Gemini API failed: ${geminiResponse.statusText}` });
-            }
+            if (!geminiResponse.ok) throw new Error(`Gemini API failed: ${geminiResponse.statusText}`);
 
-            // Corrected bug here
             const result = await geminiResponse.json();
             const jsonText = result.candidates[0].content.parts[0].text;
             const parsedJson = JSON.parse(jsonText);
