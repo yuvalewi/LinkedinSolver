@@ -1,11 +1,11 @@
 // Located at /api/queens/solve.js
-// This version uses a backtracking algorithm instead of the Gemini API.
+// This version includes a corrected base case to ensure all regions are filled.
 
 // --- Algorithmic Solver ---
 
 // A helper function to check if it's safe to place a queen at board[row][col]
 function isSafe(row, col, board, regionsMap, gridSize) {
-    // Check this row on left side
+    // Check this row on the left side
     for (let i = 0; i < col; i++) {
         if (board[row][i]) return false;
     }
@@ -16,6 +16,9 @@ function isSafe(row, col, board, regionsMap, gridSize) {
     }
 
     // Check lower diagonal on left side
+    for (let i = row, j = col; j < gridSize && i >= 0; i--, j++) {
+         if (board[i][j]) return false;
+    }
     for (let i = row, j = col; j >= 0 && i < gridSize; i++, j--) {
         if (board[i][j]) return false;
     }
@@ -23,7 +26,7 @@ function isSafe(row, col, board, regionsMap, gridSize) {
     // Check if another queen is in the same region
     const currentRegion = regionsMap.get(`${row},${col}`);
     for(let r = 0; r < gridSize; r++) {
-        for (let c = 0; c < gridSize; c++) {
+        for (let c = 0; c < col; c++) { // Only check previously placed queens
             if(board[r][c] && regionsMap.get(`${r},${c}`) === currentRegion) {
                 return false;
             }
@@ -33,26 +36,36 @@ function isSafe(row, col, board, regionsMap, gridSize) {
     return true;
 }
 
-// The main recursive backtracking function to solve the N-Queens problem
+// The main recursive backtracking function
 function solveNQueensUtil(board, col, regionsMap, gridSize) {
-    // Base case: If all queens are placed, then return true
+    // Base case: If all queens are placed, check if the solution is valid
     if (col >= gridSize) {
-        return true;
+        // NEW: Final check to ensure every region has exactly one queen.
+        const regionCounts = {};
+        for (let r = 0; r < gridSize; r++) {
+            for (let c = 0; c < gridSize; c++) {
+                if (board[r][c]) {
+                    const region = regionsMap.get(`${r},${c}`);
+                    regionCounts[region] = (regionCounts[region] || 0) + 1;
+                }
+            }
+        }
+        // A valid solution must have used every region exactly once.
+        const allRegionsValid = Object.values(regionCounts).every(count => count === 1);
+        return allRegionsValid && Object.keys(regionCounts).length === gridSize;
     }
 
     // Consider this column and try placing this queen in all rows one by one
     for (let i = 0; i < gridSize; i++) {
         if (isSafe(i, col, board, regionsMap, gridSize)) {
-            // Place this queen in board[i][col]
-            board[i][col] = 1;
+            board[i][col] = 1; // Place queen
 
             // Recur to place rest of the queens
             if (solveNQueensUtil(board, col + 1, regionsMap, gridSize)) {
                 return true;
             }
 
-            // If placing queen in board[i][col] doesn't lead to a solution,
-            // then remove queen from board[i][col] (backtrack)
+            // If placing queen doesn't lead to a solution, backtrack
             board[i][col] = 0;
         }
     }
@@ -83,10 +96,8 @@ export default async function handler(request, response) {
             return response.status(400).json({ error: 'Missing required fields.' });
         }
 
-        // Create an empty board
         const board = Array(gridSize).fill(0).map(() => Array(gridSize).fill(0));
 
-        // Create a map for quick region lookup for each cell
         const regionsMap = new Map();
         for (const color in regions) {
             for (const cell of regions[color]) {
@@ -94,12 +105,10 @@ export default async function handler(request, response) {
             }
         }
 
-        // Solve the puzzle
         if (solveNQueensUtil(board, 0, regionsMap, gridSize) === false) {
             return response.status(200).json({ solution: [], error: "No solution exists" });
         }
 
-        // Convert the board to the required coordinate format
         const solution = [];
         for (let i = 0; i < gridSize; i++) {
             for (let j = 0; j < gridSize; j++) {
@@ -109,14 +118,11 @@ export default async function handler(request, response) {
             }
         }
         
-        // The problem is solved column by column, but the game expects row by row.
-        // We need to re-order the solution so it's one queen per row.
         const finalSolution = [];
         for (let r = 0; r < gridSize; r++) {
             const queen = solution.find(q => q[0] === r);
             if(queen) finalSolution.push(queen);
         }
-
 
         return response.status(200).json({ solution: finalSolution });
 
