@@ -8,7 +8,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; }
-        .result-item, #final-clues-section { animation: fadeIn 0.5s ease-out forwards; }
+        .result-item, #final-clue-section { animation: fadeIn 0.5s ease-out forwards; }
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
@@ -34,7 +34,7 @@
                 </div>
             </div>
 
-            <button id="solve-button" class="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-all transform hover:scale-105">
+            <button id="solve-button" data-original-text="Solve Ladder" class="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-all transform hover:scale-105">
                 Solve Ladder
             </button>
 
@@ -92,15 +92,20 @@
             } catch (error) {
                 displayMessage(error.message);
             } finally {
-                setLoadingState(false, 'solve-button', 'Solve Ladder');
+                setLoadingState(false, 'solve-button');
             }
         }
         
         function setLoadingState(isLoading, buttonId, loadingText) {
             const button = document.getElementById(buttonId);
             if (button) {
+                if(isLoading) {
+                    button.dataset.originalText = button.textContent;
+                    button.textContent = loadingText;
+                } else {
+                    button.textContent = button.dataset.originalText;
+                }
                 button.disabled = isLoading;
-                button.textContent = isLoading ? loadingText : button.dataset.originalText;
             }
         }
 
@@ -117,8 +122,28 @@
             ordered_ladder.forEach((word, index) => {
                 wordToColor.set(word.toUpperCase(), colors[index % colors.length]);
             });
+            
+            // --- Part 3: Final Clue Section (Prepended to the top) ---
+            const finalCluesDiv = document.createElement('div');
+            finalCluesDiv.id = 'final-clues-section';
+            finalCluesDiv.className = 'result-item bg-gray-700 p-4 rounded-lg';
+            finalCluesDiv.innerHTML = `
+                <h3 class="text-xl font-semibold text-center mb-4 text-green-400">3. Final Step</h3>
+                <div class="space-y-4">
+                    <div>
+                        <label for="final-clue" class="block text-sm font-medium text-gray-300">Final Clue for Top & Bottom Words</label>
+                        <input type="text" id="final-clue" class="mt-1 w-full p-2 bg-gray-900 border-2 border-gray-700 rounded-lg focus:ring-2 focus:ring-green-500">
+                    </div>
+                </div>
+                <button id="solve-final-button" class="w-full mt-6 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition-all">
+                    Solve Final Clue
+                </button>
+                <div id="final-results-container" class="mt-4"></div>
+            `;
+            resultsContainer.appendChild(finalCluesDiv); // Prepend to move to top
+            document.getElementById('solve-final-button').addEventListener('click', handleFinalSolve);
 
-            // Part 1: Solved Words
+            // --- Part 1: Solved Words ---
             const solvedWordsDiv = document.createElement('div');
             solvedWordsDiv.className = 'result-item';
             solvedWordsDiv.innerHTML = `
@@ -135,10 +160,9 @@
             `;
             resultsContainer.appendChild(solvedWordsDiv);
 
-            // Part 2: Ordered Ladder
+            // --- Part 2: Ordered Ladder ---
             const orderedLadderDiv = document.createElement('div');
             orderedLadderDiv.className = 'result-item';
-            orderedLadderDiv.style.animationDelay = '200ms';
             orderedLadderDiv.innerHTML = `
                 <h3 class="text-xl font-semibold text-center mb-3 text-blue-300">2. Correct Order</h3>
                 <div class="flex flex-col items-center space-y-2 bg-gray-700 p-4 rounded-lg">
@@ -151,40 +175,14 @@
                 </div>
             `;
             resultsContainer.appendChild(orderedLadderDiv);
-
-            // Part 3: Final Clues Section
-            const finalCluesDiv = document.createElement('div');
-            finalCluesDiv.id = 'final-clues-section';
-            finalCluesDiv.className = 'result-item border-t-2 border-gray-700 pt-6';
-            finalCluesDiv.style.animationDelay = '400ms';
-            finalCluesDiv.innerHTML = `
-                <h3 class="text-xl font-semibold text-center mb-4 text-blue-300">3. Final Clues</h3>
-                <div class="space-y-4">
-                    <div>
-                        <label for="final-clue-1" class="block text-sm font-medium text-gray-300">Clue for Top/Bottom Word</label>
-                        <input type="text" id="final-clue-1" class="mt-1 w-full p-2 bg-gray-900 border-2 border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label for="final-clue-2" class="block text-sm font-medium text-gray-300">Clue for Other Top/Bottom Word</label>
-                        <input type="text" id="final-clue-2" class="mt-1 w-full p-2 bg-gray-900 border-2 border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500">
-                    </div>
-                </div>
-                <button id="solve-final-button" data-original-text="Solve Final Clues" class="w-full mt-6 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition-all">
-                    Solve Final Clues
-                </button>
-                <div id="final-results-container" class="mt-4"></div>
-            `;
-            resultsContainer.appendChild(finalCluesDiv);
-            document.getElementById('solve-final-button').addEventListener('click', handleFinalSolve);
         }
 
         async function handleFinalSolve() {
-            const finalClue1 = document.getElementById('final-clue-1').value;
-            const finalClue2 = document.getElementById('final-clue-2').value;
+            const finalClue = document.getElementById('final-clue').value;
             const finalResultsContainer = document.getElementById('final-results-container');
 
-            if (!finalClue1 || !finalClue2) {
-                finalResultsContainer.innerHTML = `<p class="text-red-400 text-center">Please enter both final clues.</p>`;
+            if (!finalClue) {
+                finalResultsContainer.innerHTML = `<p class="text-red-400 text-center">Please enter the final clue.</p>`;
                 return;
             }
 
@@ -196,7 +194,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
                         type: 'final', 
-                        finalClues: [finalClue1, finalClue2],
+                        finalClue: finalClue,
                         orderedLadder: currentLadder 
                     })
                 });
@@ -212,19 +210,19 @@
             } catch (error) {
                 finalResultsContainer.innerHTML = `<p class="text-red-400 text-center">${error.message}</p>`;
             } finally {
-                setLoadingState(false, 'solve-final-button', 'Solve Final Clues');
+                setLoadingState(false, 'solve-final-button');
             }
         }
 
         function displayFinalResults(finalSolution) {
             const finalResultsContainer = document.getElementById('final-results-container');
             if (!finalSolution || finalSolution.length === 0) {
-                finalResultsContainer.innerHTML = `<p class="text-red-400 text-center">Could not solve final clues.</p>`;
+                finalResultsContainer.innerHTML = `<p class="text-red-400 text-center">Could not solve final clue.</p>`;
                 return;
             }
             finalResultsContainer.innerHTML = `
-                <div class="bg-gray-700 p-4 rounded-lg text-center">
-                    <p class="text-gray-300">Final Words:</p>
+                <div class="bg-gray-900 p-4 rounded-lg text-center mt-4">
+                    <p class="text-gray-300">Final Answer:</p>
                     <p class="text-2xl font-bold text-green-400 tracking-wider">${finalSolution.join(' & ')}</p>
                 </div>
             `;

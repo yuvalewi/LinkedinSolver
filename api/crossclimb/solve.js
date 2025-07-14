@@ -19,57 +19,91 @@ export default async function handler(request, response) {
     }
 
     try {
-        const { allClues, wordLength } = request.body;
-        if (!allClues || !Array.isArray(allClues) || allClues.length < 2 || !wordLength) {
-            return response.status(400).json({ error: 'Missing required fields.' });
-        }
+        const { type } = request.body;
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+        let payload;
 
-        const prompt = `
-            You are an expert puzzle solver for the LinkedIn game "Crossclimb".
-            The game is a word ladder. You need to find a sequence of words where each word is formed by changing only one letter from the previous word.
-            All words in the ladder must have the same length.
+        if (type === 'ladder') {
+            const { allClues, wordLength } = request.body;
+            if (!allClues || !Array.isArray(allClues) || allClues.length < 2 || !wordLength) {
+                return response.status(400).json({ error: 'Missing required fields for ladder.' });
+            }
 
-            Here are the puzzle details:
-            - Word Length: ${wordLength}
-            - List of available clues (in no particular order): ${allClues.join('; ')}
-            
-            Your task is to perform two steps:
-            1. First, for each clue provided, determine the corresponding ${wordLength}-letter word it solves to.
-            2. Second, take all the solved words and arrange them into the correct word ladder sequence.
+            const prompt = `
+                You are an expert puzzle solver for the LinkedIn game "Crossclimb".
+                The game is a word ladder. You need to find a sequence of words where each word is formed by changing only one letter from the previous word.
+                All words in the ladder must have the same length.
 
-            Return the result in two parts: a list of each clue and its solved word, and a separate list of the final ordered ladder.
-        `;
+                Here are the puzzle details:
+                - Word Length: ${wordLength}
+                - List of available clues (in no particular order): ${allClues.join('; ')}
+                
+                Your task is to perform two steps:
+                1. First, for each clue provided, determine the corresponding ${wordLength}-letter word it solves to.
+                2. Second, take all the solved words and arrange them into the correct word ladder sequence.
 
-        const schema = {
-            type: "OBJECT",
-            properties: {
-                "solved_words": {
-                    type: "ARRAY",
-                    description: "An array of objects, each containing a clue and its corresponding solved word.",
-                    items: {
-                        type: "OBJECT",
-                        properties: {
-                            "clue": { "type": "STRING" },
-                            "word": { "type": "STRING" }
-                        },
-                        required: ["clue", "word"]
+                Return the result in two parts: a list of each clue and its solved word, and a separate list of the final ordered ladder.
+            `;
+
+            const schema = {
+                type: "OBJECT",
+                properties: {
+                    "solved_words": {
+                        type: "ARRAY",
+                        description: "An array of objects, each containing a clue and its corresponding solved word.",
+                        items: { type: "OBJECT", properties: { "clue": { "type": "STRING" }, "word": { "type": "STRING" } }, required: ["clue", "word"] }
+                    },
+                    "ordered_ladder": {
+                        type: "ARRAY",
+                        description: `An array of the solved ${wordLength}-letter words in the correct word ladder order.`,
+                        items: { "type": "STRING" }
                     }
                 },
-                "ordered_ladder": {
-                    type: "ARRAY",
-                    description: `An array of the solved ${wordLength}-letter words in the correct word ladder order.`,
-                    items: { "type": "STRING" }
-                }
-            },
-            required: ["solved_words", "ordered_ladder"]
-        };
-        
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-        
-        const payload = {
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
-            generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0.2 }
-        };
+                required: ["solved_words", "ordered_ladder"]
+            };
+
+            payload = {
+                contents: [{ role: "user", parts: [{ text: prompt }] }],
+                generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0.2 }
+            };
+
+        } else if (type === 'final') {
+            const { finalClue, orderedLadder } = request.body;
+            if (!finalClue || !orderedLadder || orderedLadder.length < 2) {
+                return response.status(400).json({ error: 'Missing required fields for final clue.' });
+            }
+
+            const topWord = orderedLadder[0];
+            const bottomWord = orderedLadder[orderedLadder.length - 1];
+
+            const prompt = `
+                You are an expert puzzle solver for the final step of the LinkedIn game "Crossclimb".
+                The top word of the solved ladder is "${topWord}" and the bottom word is "${bottomWord}".
+                The final clue, which describes the relationship between these two words, is: "${finalClue}".
+
+                Your task is to determine the two words that solve this final clue. Return them as a list.
+            `;
+
+            const schema = {
+                type: "OBJECT",
+                properties: {
+                    "final_solution": {
+                        type: "ARRAY",
+                        description: "An array containing the two words that solve the final clue.",
+                        items: { "type": "STRING" }
+                    }
+                },
+                required: ["final_solution"]
+            };
+
+            payload = {
+                contents: [{ role: "user", parts: [{ text: prompt }] }],
+                generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0.2 }
+            };
+
+        } else {
+            return response.status(400).json({ error: 'Invalid request type.' });
+        }
 
         const geminiResponse = await fetch(apiUrl, {
             method: 'POST',
