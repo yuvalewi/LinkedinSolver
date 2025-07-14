@@ -1,24 +1,30 @@
 // Located at /api/tango/solve.js
-// This version uses a backtracking algorithm instead of the Gemini API.
+// This version uses a corrected and more robust backtracking algorithm.
 
 // --- Algorithmic Solver ---
 
 function isValid(grid, r, c, val, constraintsMap) {
     const n = grid.length;
+
+    // Create a temporary grid to check the new state
     const tempGrid = grid.map(row => [...row]);
     tempGrid[r][c] = val;
 
-    // 1. Adjacency Rule: No more than 2 identical symbols next to each other
-    // Check horizontally
-    if (c > 1 && tempGrid[r][c] === tempGrid[r][c - 1] && tempGrid[r][c] === tempGrid[r][c - 2]) return false;
-    if (c < n - 2 && tempGrid[r][c] === tempGrid[r][c + 1] && tempGrid[r][c] === tempGrid[r][c + 2]) return false;
-    if (c > 0 && c < n - 1 && tempGrid[r][c - 1] === tempGrid[r][c] && tempGrid[r][c] === tempGrid[r][c + 1]) return false;
+    // Rule 1: No more than two identical symbols can be adjacent
+    // Check horizontally for "XXX" or "OOO"
+    for (let j = 0; j < n - 2; j++) {
+        if (tempGrid[r][j] !== -1 && tempGrid[r][j] === tempGrid[r][j + 1] && tempGrid[r][j] === tempGrid[r][j + 2]) {
+            return false;
+        }
+    }
     // Check vertically
-    if (r > 1 && tempGrid[r][c] === tempGrid[r - 1][c] && tempGrid[r][c] === tempGrid[r - 2][c]) return false;
-    if (r < n - 2 && tempGrid[r][c] === tempGrid[r + 1][c] && tempGrid[r][c] === tempGrid[r + 2][c]) return false;
-    if (r > 0 && r < n - 1 && tempGrid[r - 1][c] === tempGrid[r][c] && tempGrid[r][c] === tempGrid[r + 1][c]) return false;
+    for (let i = 0; i < n - 2; i++) {
+        if (tempGrid[i][c] !== -1 && tempGrid[i][c] === tempGrid[i + 1][c] && tempGrid[i][c] === tempGrid[i + 2][c]) {
+            return false;
+        }
+    }
 
-    // 2. Balance Rule: Equal numbers of suns and moons in each row/column
+    // Rule 2: Equal number of suns (1) and moons (0) in each row/column
     let rowCounts = { 0: 0, 1: 0 };
     let colCounts = { 0: 0, 1: 0 };
     for (let i = 0; i < n; i++) {
@@ -28,32 +34,52 @@ function isValid(grid, r, c, val, constraintsMap) {
     if (rowCounts[0] > n / 2 || rowCounts[1] > n / 2) return false;
     if (colCounts[0] > n / 2 || colCounts[1] > n / 2) return false;
 
-    // 3. Uniqueness Rule (only check if row/column is full)
-    if (rowCounts[0] + rowCounts[1] === n) {
-        for (let i = 0; i < r; i++) {
-            if (tempGrid[i].every((cell, j) => cell === tempGrid[r][j])) return false;
+    // Rule 3: No two rows or columns are identical (only check if they are full)
+    if (!tempGrid[r].includes(-1)) { // If the current row is now full
+        for (let i = 0; i < n; i++) {
+            if (i === r) continue;
+            if (!tempGrid[i].includes(-1)) { // Compare only with other full rows
+                if (tempGrid[i].every((cell, j) => cell === tempGrid[r][j])) {
+                    return false;
+                }
+            }
         }
     }
-    if (colCounts[0] + colCounts[1] === n) {
-        for (let i = 0; i < c; i++) {
-            if (tempGrid.every((row, j) => row[i] === tempGrid[j][c])) return false;
+    let colIsFull = true;
+    for (let i = 0; i < n; i++) { if (tempGrid[i][c] === -1) { colIsFull = false; break; } }
+    if (colIsFull) {
+        for (let j = 0; j < n; j++) {
+            if (j === c) continue;
+            let otherColIsFull = true;
+            for (let i = 0; i < n; i++) { if (tempGrid[i][j] === -1) { otherColIsFull = false; break; } }
+            if (otherColIsFull) {
+                let colsAreIdentical = true;
+                for (let i = 0; i < n; i++) {
+                    if (tempGrid[i][c] !== tempGrid[i][j]) {
+                        colsAreIdentical = false;
+                        break;
+                    }
+                }
+                if (colsAreIdentical) return false;
+            }
         }
     }
-
-    // 4. Constraint Rules
-    const checkConstraint = (nr, nc) => {
-        const key = `${r},${c}-${nr},${nc}`;
+    
+    // Rule 4: Check constraints (= and X) with neighbors
+    const checkConstraint = (r1, c1, r2, c2) => {
+        const key = `${r1},${c1}-${r2},${c2}`;
         const rule = constraintsMap.get(key);
-        if (rule && tempGrid[nr][nc] !== -1) {
-            if (rule === 'equal' && tempGrid[nr][nc] !== val) return false;
-            if (rule === 'unequal' && tempGrid[nr][nc] === val) return false;
+        if (rule && tempGrid[r2][c2] !== -1) { // Only check if neighbor is filled
+            if (rule === 'equal' && tempGrid[r1][c1] !== tempGrid[r2][c2]) return false;
+            if (rule === 'unequal' && tempGrid[r1][c1] === tempGrid[r2][c2]) return false;
         }
         return true;
     };
-    if (r > 0 && !checkConstraint(r - 1, c)) return false;
-    if (r < n - 1 && !checkConstraint(r + 1, c)) return false;
-    if (c > 0 && !checkConstraint(r, c - 1)) return false;
-    if (c < n - 1 && !checkConstraint(r, c + 1)) return false;
+    if (c > 0 && !checkConstraint(r, c, r, c - 1)) return false;
+    if (c < n - 1 && !checkConstraint(r, c, r, c + 1)) return false;
+    if (r > 0 && !checkConstraint(r, c, r - 1, c)) return false;
+    if (r < n - 1 && !checkConstraint(r, c, r + 1, c)) return false;
+
 
     return true;
 }
@@ -63,7 +89,8 @@ function solve(grid, constraintsMap) {
     for (let r = 0; r < n; r++) {
         for (let c = 0; c < n; c++) {
             if (grid[r][c] === -1) { // Find first empty cell
-                for (let val of [0, 1]) { // Try placing Moon (0), then Sun (1)
+                // Try placing Moon (0), then Sun (1)
+                for (let val of [0, 1]) { 
                     if (isValid(grid, r, c, val, constraintsMap)) {
                         grid[r][c] = val;
                         if (solve(grid, constraintsMap)) {
@@ -72,11 +99,11 @@ function solve(grid, constraintsMap) {
                         grid[r][c] = -1; // Backtrack
                     }
                 }
-                return false; // No valid number for this cell
+                return false; // No valid number for this cell, trigger backtracking
             }
         }
     }
-    return true; // All cells filled
+    return true; // All cells filled, solution found
 }
 
 
@@ -101,10 +128,14 @@ export default async function handler(request, response) {
             return response.status(400).json({ error: 'Invalid input format.' });
         }
 
+        // NEW: Check if grid size is even, as the balance rule requires it.
+        if (gridSize % 2 !== 0) {
+            return response.status(400).json({ error: "Invalid puzzle: Grid size must be an even number." });
+        }
+
         // Create a map for faster constraint lookups
         const constraintsMap = new Map();
         constraints.forEach(c => {
-            // Store the rule in both directions for easy lookup
             constraintsMap.set(`${c.c1.join(',')}-${c.c2.join(',')}`, c.type);
             constraintsMap.set(`${c.c2.join(',')}-${c.c1.join(',')}`, c.type);
         });
