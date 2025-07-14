@@ -84,91 +84,43 @@
 
             // 2. Update UI to loading state
             setLoadingState(true);
-            resultsContainer.innerHTML = ''; // Clear previous results
+            resultsContainer.innerHTML = '';
 
-            // 3. Construct the prompt for the Gemini API
-            const prompt = `
-                You are an expert puzzle solver for the LinkedIn game "Pinpoint".
-                The game reveals up to five words that all share a single common category.
-                Your task is to determine that common category based on the words provided.
-                The revealed words are: ${words.join(', ')}.
-                What is the most likely category?
-            `;
-
-            // 4. Define the desired JSON structure for the response
-            const schema = {
-                type: "OBJECT",
-                properties: {
-                    "category": {
-                        type: "STRING",
-                        description: "The single, common category for the provided words."
-                    }
-                },
-                required: ["category"]
-            };
-
-            // 5. Call the Gemini API
+            // 3. Call our own secure serverless function
             try {
-                const apiKey = ""; // API key is handled by the environment
-                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-
-                const payload = {
-                    contents: [{ role: "user", parts: [{ text: prompt }] }],
-                    generationConfig: {
-                        responseMimeType: "application/json",
-                        responseSchema: schema,
-                        temperature: 0.3 // A bit of creativity might be needed
-                    }
-                };
-
-                const response = await fetch(apiUrl, {
+                // This URL points to the serverless function for Vercel.
+                // Vercel automatically knows how to handle this path.
+                const response = await fetch('/api/solve', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify({ words: words })
                 });
 
                 if (!response.ok) {
-                    throw new Error(`API Error: ${response.status} ${response.statusText}`);
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `Server Error: ${response.status}`);
                 }
 
                 const result = await response.json();
-
-                if (result.candidates && result.candidates.length > 0 &&
-                    result.candidates[0].content && result.candidates[0].content.parts &&
-                    result.candidates[0].content.parts.length > 0) {
-                    
-                    const jsonText = result.candidates[0].content.parts[0].text;
-                    const parsedJson = JSON.parse(jsonText);
-                    displayResult(parsedJson.category, words);
-
-                } else {
-                    console.error("Unexpected API response structure:", result);
-                    displayMessage('The AI returned an unexpected response. Please try again.', 'error');
-                }
+                displayResult(result.category, words);
 
             } catch (error) {
                 console.error('Error solving puzzle:', error);
-                displayMessage(`An error occurred: ${error.message}. Please check the console for details.`, 'error');
+                displayMessage(`An error occurred: ${error.message}`, 'error');
             } finally {
-                // 6. Reset UI from loading state
+                // 4. Reset UI from loading state
                 setLoadingState(false);
             }
         }
 
         function setLoadingState(isLoading) {
-            if (isLoading) {
-                solveButton.disabled = true;
-                buttonText.classList.add('hidden');
-                buttonSpinner.classList.remove('hidden');
-            } else {
-                solveButton.disabled = false;
-                buttonText.classList.remove('hidden');
-                buttonSpinner.classList.add('hidden');
-            }
+            solveButton.disabled = isLoading;
+            buttonText.classList.toggle('hidden', isLoading);
+            buttonSpinner.classList.toggle('hidden', !isLoading);
         }
 
         function displayResult(category, words) {
-            resultsContainer.innerHTML = ''; // Clear any previous messages
+            resultsContainer.innerHTML = '';
             if (!category) {
                 displayMessage('The AI could not determine a category. Try adding another word.', 'error');
                 return;
@@ -196,7 +148,7 @@
         }
 
         function displayMessage(message, type = 'info') {
-            resultsContainer.innerHTML = ''; // Clear previous content
+            resultsContainer.innerHTML = '';
             const messageDiv = document.createElement('div');
             const colorClass = type === 'error' ? 'bg-red-900 border-red-700 text-red-200' : 'bg-blue-900 border-blue-700 text-blue-200';
             messageDiv.className = `p-4 rounded-lg border ${colorClass} text-center`;
