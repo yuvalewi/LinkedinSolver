@@ -8,7 +8,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; }
-        .grid-cell { transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out; }
+        .grid-cell { 
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out;
+            user-select: none; /* Prevents text selection while dragging */
+        }
         .grid-cell:active { transform: scale(0.95); }
         .color-palette-btn.active {
             transform: scale(1.1);
@@ -58,14 +61,19 @@
         const colorPaletteContainer = document.getElementById('color-palette');
         const solveButton = document.getElementById('solve-button');
 
-        const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280'];
+        const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280', '#f59e0b', '#10b981'];
         let selectedColor = colors[0];
         let gridSize = 8;
-        let gridData = {};
+        let isPainting = false; // NEW: Flag to track if we are painting
 
         function createPalette() {
             colorPaletteContainer.innerHTML = '';
-            colors.slice(0, gridSize).forEach((color, index) => {
+            const activeColors = colors.slice(0, gridSize);
+            if (!activeColors.includes(selectedColor)) {
+                selectedColor = activeColors[0];
+            }
+
+            activeColors.forEach((color, index) => {
                 const button = document.createElement('button');
                 button.className = 'color-palette-btn w-8 h-8 rounded-full border-2 border-transparent transition-transform';
                 button.style.backgroundColor = color;
@@ -86,7 +94,12 @@
             gridContainer.innerHTML = '';
             gridContainer.style.gridTemplateColumns = `repeat(${gridSize}, 1fr)`;
             gridContainer.style.display = 'grid';
-            gridData = {};
+            
+            // Function to color a cell
+            const paintCell = (cell) => {
+                cell.style.backgroundColor = selectedColor;
+                cell.dataset.color = selectedColor;
+            };
 
             for (let r = 0; r < gridSize; r++) {
                 for (let c = 0; c < gridSize; c++) {
@@ -96,15 +109,33 @@
                     cell.dataset.col = c;
                     cell.dataset.color = 'none';
 
-                    cell.addEventListener('click', () => {
-                        cell.style.backgroundColor = selectedColor;
-                        cell.dataset.color = selectedColor;
+                    // --- NEW PAINTING LOGIC ---
+                    cell.addEventListener('mousedown', (e) => {
+                        e.preventDefault(); // Prevent default drag behavior
+                        isPainting = true;
+                        paintCell(e.target);
                     });
+                    cell.addEventListener('mouseover', (e) => {
+                        if (isPainting) {
+                            paintCell(e.target);
+                        }
+                    });
+                    // --- END NEW LOGIC ---
+
                     gridContainer.appendChild(cell);
                 }
             }
             createPalette();
         }
+        
+        // NEW: Add listeners to the window to stop painting when the mouse leaves the grid or is released
+        window.addEventListener('mouseup', () => {
+            isPainting = false;
+        });
+        gridContainer.addEventListener('mouseleave', () => {
+            isPainting = false;
+        });
+
 
         async function handleSolve() {
             const regions = {};
@@ -146,15 +177,16 @@
         }
 
         function displaySolution(solution) {
-            // First, clear any existing queens
             document.querySelectorAll('.queen-icon').forEach(q => q.remove());
-
-            // Then, add new queens
+            if (!solution || solution.length === 0) {
+                alert("No solution found for this configuration.");
+                return;
+            }
             solution.forEach(([row, col]) => {
                 const cell = document.querySelector(`.grid-cell[data-row='${row}'][data-col='${col}']`);
                 if (cell) {
                     const queen = document.createElement('span');
-                    queen.className = 'queen-icon text-4xl';
+                    queen.className = 'queen-icon text-4xl pointer-events-none';
                     queen.innerHTML = '♕'; // Queen symbol
                     cell.appendChild(queen);
                 }
