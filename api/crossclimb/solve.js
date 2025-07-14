@@ -24,12 +24,13 @@ export default async function handler(request, response) {
         let payload;
 
         if (type === 'ladder') {
-            const { allClues, wordLength, activeClue } = request.body;
-            if (!allClues || !Array.isArray(allClues) || allClues.length < 2 || !wordLength || !activeClue) {
+            const { allClues, wordLength, activeClue } = request.body; // activeClue is now optional
+            if (!allClues || !Array.isArray(allClues) || allClues.length < 2 || !wordLength) {
                 return response.status(400).json({ error: 'Missing required fields for ladder.' });
             }
 
-            const prompt = `
+            // Build the prompt dynamically based on whether activeClue is provided
+            let prompt = `
                 You are an expert puzzle solver for the LinkedIn game "Crossclimb".
                 The game is a word ladder. You need to find a sequence of words where each word is formed by changing only one letter from the previous word.
                 All words in the ladder must have the same length.
@@ -37,14 +38,22 @@ export default async function handler(request, response) {
                 Here are the puzzle details:
                 - Word Length: ${wordLength}
                 - List of available clues (in no particular order): ${allClues.join('; ')}
-                - The clue for the BOTTOM word in the ladder is: "${activeClue}"
+            `;
+            
+            if (activeClue) {
+                prompt += `\n- The clue for the BOTTOM word in the ladder is: "${activeClue}"`;
+            }
 
+            prompt += `
                 Your task is to perform two steps:
                 1. Solve each clue to find the corresponding ${wordLength}-letter word. It is critical that you provide a solved word for EVERY clue in the list.
-                2. Arrange all the solved words into a valid word ladder. The word that solves the clue "${activeClue}" MUST be the last word in the final ordered ladder.
+                2. Arrange all the solved words into a valid word ladder.`;
 
-                Return the result in two parts: a list of each clue and its solved word, and a separate list of the final ordered ladder.
-            `;
+            if (activeClue) {
+                prompt += ` The word that solves the clue "${activeClue}" MUST be the last word in the final ordered ladder.`;
+            }
+
+            prompt += `\nReturn the result in two parts: a list of each clue and its solved word, and a separate list of the final ordered ladder.`;
 
             const schema = {
                 type: "OBJECT",
