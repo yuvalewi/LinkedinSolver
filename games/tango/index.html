@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tango Solver</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .grid-container { display: grid; position: relative; }
+        .grid-cell { background-color: #4b5563; position: relative; }
+        .cell-icon { font-size: 2rem; line-height: 1; user-select: none; }
+        .constraint {
+            position: absolute;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            cursor: pointer;
+            z-index: 10;
+            background-color: rgba(31, 41, 55, 0.8);
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex justify-center min-h-screen p-4">
+    <div class="w-full max-w-4xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <!-- Input Section -->
+        <div class="bg-gray-800 rounded-xl shadow-2xl p-6 md:p-8">
+            <div class="text-center mb-6">
+                <h1 class="text-3xl md:text-4xl font-bold text-blue-400">Tango Solver</h1>
+                <p class="text-gray-400 mt-2">Recreate the puzzle grid below.</p>
+            </div>
+            <div class="flex items-center justify-center mb-4">
+                 <label for="grid-size" class="text-sm font-medium text-gray-300 mr-2">Grid Size:</label>
+                 <select id="grid-size" class="bg-gray-900 border-2 border-gray-700 rounded-lg p-2">
+                    <option value="4">4x4</option>
+                    <option value="5">5x5</option>
+                    <option value="6" selected>6x6</option>
+                    <option value="7">7x7</option>
+                    <option value="8">8x8</option>
+                    <option value="9">9x9</option>
+                    <option value="10">10x10</option>
+                    <option value="11">11x11</option>
+                    <option value="12">12x12</option>
+                 </select>
+            </div>
+            <div id="input-grid-container" class="bg-gray-700 p-2 rounded-lg aspect-square">
+                <div id="input-grid" class="w-full h-full grid-container"></div>
+            </div>
+            <button id="solve-button" class="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg">
+                Solve Puzzle
+            </button>
+        </div>
+
+        <!-- Solution Section -->
+        <div class="bg-gray-800 rounded-xl shadow-2xl p-6 md:p-8">
+             <h2 class="text-2xl font-bold text-center text-blue-300 mb-4">Solution</h2>
+             <div id="solution-container" class="bg-gray-700 p-2 rounded-lg aspect-square">
+                <div id="solution-grid" class="w-full h-full grid-container"></div>
+             </div>
+        </div>
+    </div>
+     <footer class="fixed bottom-4 text-center w-full">
+        <a href="/games/" class="text-blue-400 hover:text-blue-300 text-sm">&larr; Back to All Games</a>
+    </footer>
+
+    <script>
+        const gridSizeSelect = document.getElementById('grid-size');
+        const inputGrid = document.getElementById('input-grid');
+        const solutionGrid = document.getElementById('solution-grid');
+        const solveButton = document.getElementById('solve-button');
+
+        let gridSize = 6;
+        const sun = '☀️';
+        const moon = '🌙';
+
+        function createGrid() {
+            gridSize = parseInt(gridSizeSelect.value);
+            [inputGrid, solutionGrid].forEach(gridEl => {
+                gridEl.innerHTML = '';
+                gridEl.style.gridTemplateColumns = `repeat(${gridSize}, 1fr)`;
+                gridEl.style.gridTemplateRows = `repeat(${gridSize}, 1fr)`;
+            });
+
+            for (let r = 0; r < gridSize; r++) {
+                for (let c = 0; c < gridSize; c++) {
+                    // Create input cell
+                    const inputCell = document.createElement('div');
+                    inputCell.className = 'grid-cell flex items-center justify-center cursor-pointer';
+                    inputCell.dataset.state = 'empty'; // empty, sun, moon
+                    inputCell.addEventListener('click', () => {
+                        const states = ['empty', 'sun', 'moon'];
+                        const currentState = inputCell.dataset.state;
+                        const nextState = states[(states.indexOf(currentState) + 1) % states.length];
+                        inputCell.dataset.state = nextState;
+                        const iconSize = getIconSize();
+                        inputCell.innerHTML = nextState === 'sun' ? `<span class="cell-icon" style="font-size: ${iconSize}px;">${sun}</span>` : nextState === 'moon' ? `<span class="cell-icon" style="font-size: ${iconSize}px;">${moon}</span>` : '';
+                    });
+                    inputGrid.appendChild(inputCell);
+
+                    // Create solution cell
+                    const solutionCell = document.createElement('div');
+                    solutionCell.className = 'grid-cell flex items-center justify-center';
+                    solutionGrid.appendChild(solutionCell);
+
+                    // Create constraint placers
+                    if (c < gridSize - 1) { // Horizontal constraint
+                        const hConstraint = document.createElement('div');
+                        hConstraint.className = 'constraint';
+                        hConstraint.dataset.type = 'none';
+                        hConstraint.style.width = '20px';
+                        hConstraint.style.height = '10px';
+                        hConstraint.style.top = `calc(${r * (100 / gridSize)}% + ${(100 / gridSize / 2)}% - 5px)`;
+                        hConstraint.style.left = `calc(${(c + 1) * (100 / gridSize)}% - 10px)`;
+                        hConstraint.addEventListener('click', cycleConstraint);
+                        inputGrid.appendChild(hConstraint);
+                    }
+                    if (r < gridSize - 1) { // Vertical constraint
+                        const vConstraint = document.createElement('div');
+                        vConstraint.className = 'constraint';
+                        vConstraint.dataset.type = 'none';
+                        vConstraint.style.width = '10px';
+                        vConstraint.style.height = '20px';
+                        vConstraint.style.top = `calc(${(r + 1) * (100 / gridSize)}% - 10px)`;
+                        vConstraint.style.left = `calc(${c * (100 / gridSize)}% + ${(100 / gridSize / 2)}% - 5px)`;
+                        vConstraint.addEventListener('click', cycleConstraint);
+                        inputGrid.appendChild(vConstraint);
+                    }
+                }
+            }
+        }
+        
+        function getIconSize() {
+            if (gridSize >= 10) return 1.25 * 16; // 1.25rem
+            if (gridSize >= 8) return 1.5 * 16; // 1.5rem
+            return 2 * 16; // 2rem
+        }
+
+        function cycleConstraint(e) {
+            const el = e.target;
+            const types = ['none', 'equal', 'unequal'];
+            const currentType = el.dataset.type;
+            const nextType = types[(types.indexOf(currentType) + 1) % types.length];
+            el.dataset.type = nextType;
+            if (nextType === 'equal') el.textContent = '=';
+            else if (nextType === 'unequal') el.textContent = 'X';
+            else el.textContent = '';
+        }
+
+        async function handleSolve() {
+            // Scrape initial grid state
+            const initialGrid = [];
+            const inputCells = inputGrid.querySelectorAll('.grid-cell');
+            for (let r = 0; r < gridSize; r++) {
+                const row = [];
+                for (let c = 0; c < gridSize; c++) {
+                    const state = inputCells[r * gridSize + c].dataset.state;
+                    row.push(state === 'sun' ? 1 : state === 'moon' ? 0 : -1); // 1=sun, 0=moon, -1=empty
+                }
+                initialGrid.push(row);
+            }
+
+            // Scrape constraints
+            const constraints = [];
+            inputGrid.querySelectorAll('.constraint').forEach(el => {
+                if (el.dataset.type !== 'none') {
+                    const isHorizontal = el.style.height === '10px';
+                    const top = parseFloat(el.style.top);
+                    const left = parseFloat(el.style.left);
+                    const r = Math.round((top + 5) / (100 / gridSize) - 0.5);
+                    const c = Math.round((left + (isHorizontal ? 10 : 5)) / (100 / gridSize) - (isHorizontal ? 1 : 0.5));
+                    
+                    const r2 = isHorizontal ? r : r + 1;
+                    const c2 = isHorizontal ? c + 1 : c;
+                    constraints.push({ type: el.dataset.type, c1: [r, c], c2: [r2, c2] });
+                }
+            });
+
+            setLoadingState(true);
+
+            try {
+                const response = await fetch('/api/tango/solve', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ gridSize, initialGrid, constraints })
+                });
+
+                if (!response.ok) throw new Error((await response.json()).error || 'Server Error');
+                const result = await response.json();
+                displaySolution(result.solution);
+
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            } finally {
+                setLoadingState(false);
+            }
+        }
+
+        function displaySolution(solution) {
+            const solutionCells = solutionGrid.querySelectorAll('.grid-cell');
+            const iconSize = getIconSize();
+            for (let r = 0; r < gridSize; r++) {
+                for (let c = 0; c < gridSize; c++) {
+                    const cell = solutionCells[r * gridSize + c];
+                    const val = solution[r][c];
+                    cell.innerHTML = val === 1 ? `<span class="cell-icon" style="font-size: ${iconSize}px;">${sun}</span>` : val === 0 ? `<span class="cell-icon" style="font-size: ${iconSize}px;">${moon}</span>` : '';
+                }
+            }
+        }
+
+        function setLoadingState(isLoading) {
+            solveButton.disabled = isLoading;
+            solveButton.textContent = isLoading ? 'Solving...' : 'Solve Puzzle';
+        }
+
+        gridSizeSelect.addEventListener('change', createGrid);
+        solveButton.addEventListener('click', handleSolve);
+        createGrid();
+    </script>
+</body>
+</html>
