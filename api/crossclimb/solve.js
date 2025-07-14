@@ -41,9 +41,10 @@ export default async function handler(request, response) {
 
                 Your task is to perform two steps with absolute precision:
                 1. Solve each clue to find the corresponding ${wordLength}-letter word. It is critical that you provide a solved word for EVERY clue in the list.
-                2. Arrange ALL of the solved words into a valid word ladder. The word that solves the clue "${activeClue}" MUST be the last word in the final ordered ladder.
+                2. Arrange ALL of the solved words into a valid word ladder.
 
                 CRITICAL CONSTRAINTS:
+                - The word that solves the clue "${activeClue}" MUST be the last word in the final ordered ladder. You should determine this word first and then build the ladder upwards from it.
                 - The 'ordered_ladder' list MUST contain the exact same words as the words solved from the clues, just in the correct order. Do not invent new words or omit any.
                 - The 'ordered_ladder' MUST be a valid word ladder where each word is only one letter different from the word before it.
 
@@ -134,7 +135,7 @@ export default async function handler(request, response) {
             return response.status(geminiResponse.status).json({ error: `Gemini API failed: ${geminiResponse.statusText}` });
         }
 
-        const result = await geminiResponse.json();
+        const result = await response.json();
         const jsonText = result.candidates[0].content.parts[0].text;
         const parsedJson = JSON.parse(jsonText);
 
