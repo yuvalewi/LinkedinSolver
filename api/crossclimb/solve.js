@@ -91,6 +91,7 @@ export default async function handler(request, response) {
                 IMPORTANT CONSTRAINTS:
                 1. The two new words you find MUST NOT be any of the words already used in the ladder (${orderedLadder.join(', ')}).
                 2. Both new words MUST be exactly ${wordLength} letters long.
+                3. One of the new words must be only one letter different from the top word ("${topWord}"), and the other new word must be only one letter different from the bottom word ("${bottomWord}").
 
                 Return the two new words as a list.
             `;
