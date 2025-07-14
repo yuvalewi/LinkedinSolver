@@ -1,7 +1,19 @@
 // This file should be located at /api/pinpoint/solve.js
-// This version uses the Vercel-native syntax with a default export.
+// This version adds CORS headers to allow the Chrome extension to make requests.
 
 export default async function handler(request, response) {
+    // --- START OF CORS FIX ---
+    // Set headers to allow requests from any origin (or you can restrict it to your extension's ID)
+    response.setHeader('Access-Control-Allow-Origin', '*');
+    response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    // Handle preflight "OPTIONS" requests sent by the browser
+    if (request.method === 'OPTIONS') {
+        return response.status(200).end();
+    }
+    // --- END OF CORS FIX ---
+
     // 1. Check if the request method is POST.
     if (request.method !== 'POST') {
         return response.status(405).json({ error: 'Method Not Allowed' });
@@ -15,13 +27,13 @@ export default async function handler(request, response) {
     }
 
     try {
-        // 3. Get the words from the request body. Vercel automatically parses JSON bodies.
+        // 3. Get the words from the request body.
         const { words } = request.body;
         if (!words || !Array.isArray(words) || words.length === 0) {
             return response.status(400).json({ error: 'Invalid input: "words" array is required.' });
         }
 
-        // 4. Construct the prompt and schema, just like before.
+        // 4. Construct the prompt and schema.
         const prompt = `You are an expert puzzle solver for the LinkedIn game "Pinpoint". The game reveals up to five words that all share a single common category. Your task is to determine that common category based on the words provided. The revealed words are: ${words.join(', ')}. What is the most likely category?`;
         
         const schema = {
