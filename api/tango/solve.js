@@ -1,5 +1,5 @@
 // Located at /api/tango/solve.js
-// This version contains a corrected uniqueness check in the backtracking algorithm.
+// This version has the row/column uniqueness rule removed.
 
 // --- Algorithmic Solver ---
 
@@ -11,7 +11,7 @@ function isValid(grid, r, c, val, constraintsMap) {
     tempGrid[r][c] = val;
 
     // Rule 1: No more than two identical symbols can be adjacent
-    // Check horizontally
+    // Check horizontally for "XXX" or "OOO"
     if (c > 1 && tempGrid[r][c-1] === val && tempGrid[r][c-2] === val) return false;
     if (c > 0 && c < n - 1 && tempGrid[r][c-1] === val && tempGrid[r][c+1] === val) return false;
     if (c < n - 2 && tempGrid[r][c+1] === val && tempGrid[r][c+2] === val) return false;
@@ -37,35 +37,8 @@ function isValid(grid, r, c, val, constraintsMap) {
     if (colCounts[0] + colCounts[1] === n && (colCounts[0] !== n_half || colCounts[1] !== n_half)) return false;
 
 
-    // Rule 3: No two rows or columns are identical (only check if they are full)
-    if (!tempGrid[r].includes(-1)) { // If the current row is now full
-        for (let i = 0; i < n; i++) {
-            if (i === r) continue;
-            // Compare with any other row that is also full
-            if (!tempGrid[i].includes(-1)) {
-                if (tempGrid[i].every((cell, j) => cell === tempGrid[r][j])) {
-                    return false;
-                }
-            }
-        }
-    }
-    let colIsFull = !tempGrid.some(row => row[c] === -1);
-    if (colIsFull) {
-        for (let j = 0; j < n; j++) {
-            if (j === c) continue;
-            let otherColIsFull = !tempGrid.some(row => row[j] === -1);
-            if (otherColIsFull) {
-                let colsAreIdentical = true;
-                for (let i = 0; i < n; i++) {
-                    if (tempGrid[i][c] !== tempGrid[i][j]) {
-                        colsAreIdentical = false;
-                        break;
-                    }
-                }
-                if (colsAreIdentical) return false;
-            }
-        }
-    }
+    // Rule 3: No two rows or columns are identical - REMOVED AS REQUESTED
+
     
     // Rule 4: Check constraints (= and X) with neighbors
     const checkConstraint = (r1, c1, r2, c2) => {
