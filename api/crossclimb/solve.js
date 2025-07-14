@@ -135,7 +135,7 @@ export default async function handler(request, response) {
             return response.status(geminiResponse.status).json({ error: `Gemini API failed: ${geminiResponse.statusText}` });
         }
 
-        const result = await response.json();
+        const result = await geminiResponse.json();
         const jsonText = result.candidates[0].content.parts[0].text;
         const parsedJson = JSON.parse(jsonText);
 
