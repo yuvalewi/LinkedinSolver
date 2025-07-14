@@ -40,8 +40,8 @@ export default async function handler(request, response) {
                 - The clue for the BOTTOM word in the ladder is: "${activeClue}"
 
                 Your task is to perform two steps:
-                1. Solve each clue to find the corresponding ${wordLength}-letter word.
-                2. Arrange the solved words into a valid word ladder. The word that solves the clue "${activeClue}" MUST be the last word in the final ordered ladder.
+                1. Solve each clue to find the corresponding ${wordLength}-letter word. It is critical that you provide a solved word for EVERY clue in the list.
+                2. Arrange all the solved words into a valid word ladder. The word that solves the clue "${activeClue}" MUST be the last word in the final ordered ladder.
 
                 Return the result in two parts: a list of each clue and its solved word, and a separate list of the final ordered ladder.
             `;
@@ -51,7 +51,7 @@ export default async function handler(request, response) {
                 properties: {
                     "solved_words": {
                         type: "ARRAY",
-                        description: "An array of objects, each containing a clue and its corresponding solved word.",
+                        description: `An array of objects, each containing a clue and its corresponding solved word. This array MUST have exactly ${allClues.length} items, one for each provided clue.`,
                         items: { type: "OBJECT", properties: { "clue": { "type": "STRING" }, "word": { "type": "STRING" } }, required: ["clue", "word"] }
                     },
                     "ordered_ladder": {
