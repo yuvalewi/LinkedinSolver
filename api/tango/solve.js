@@ -1,5 +1,5 @@
 // Located at /api/tango/solve.js
-// This version uses a corrected and more robust backtracking algorithm.
+// This version contains a corrected uniqueness check in the backtracking algorithm.
 
 // --- Algorithmic Solver ---
 
@@ -11,18 +11,15 @@ function isValid(grid, r, c, val, constraintsMap) {
     tempGrid[r][c] = val;
 
     // Rule 1: No more than two identical symbols can be adjacent
-    // Check horizontally for "XXX" or "OOO"
-    for (let j = 0; j < n - 2; j++) {
-        if (tempGrid[r][j] !== -1 && tempGrid[r][j] === tempGrid[r][j + 1] && tempGrid[r][j] === tempGrid[r][j + 2]) {
-            return false;
-        }
-    }
+    // Check horizontally
+    if (c > 1 && tempGrid[r][c-1] === val && tempGrid[r][c-2] === val) return false;
+    if (c > 0 && c < n - 1 && tempGrid[r][c-1] === val && tempGrid[r][c+1] === val) return false;
+    if (c < n - 2 && tempGrid[r][c+1] === val && tempGrid[r][c+2] === val) return false;
     // Check vertically
-    for (let i = 0; i < n - 2; i++) {
-        if (tempGrid[i][c] !== -1 && tempGrid[i][c] === tempGrid[i + 1][c] && tempGrid[i][c] === tempGrid[i + 2][c]) {
-            return false;
-        }
-    }
+    if (r > 1 && tempGrid[r-1][c] === val && tempGrid[r-2][c] === val) return false;
+    if (r > 0 && r < n - 1 && tempGrid[r-1][c] === val && tempGrid[r+1][c] === val) return false;
+    if (r < n - 2 && tempGrid[r+1][c] === val && tempGrid[r+2][c] === val) return false;
+
 
     // Rule 2: Equal number of suns (1) and moons (0) in each row/column
     let rowCounts = { 0: 0, 1: 0 };
@@ -34,24 +31,29 @@ function isValid(grid, r, c, val, constraintsMap) {
     if (rowCounts[0] > n / 2 || rowCounts[1] > n / 2) return false;
     if (colCounts[0] > n / 2 || colCounts[1] > n / 2) return false;
 
+    // If a row or column is now full, it MUST have a perfect balance
+    const n_half = n / 2;
+    if (rowCounts[0] + rowCounts[1] === n && (rowCounts[0] !== n_half || rowCounts[1] !== n_half)) return false;
+    if (colCounts[0] + colCounts[1] === n && (colCounts[0] !== n_half || colCounts[1] !== n_half)) return false;
+
+
     // Rule 3: No two rows or columns are identical (only check if they are full)
     if (!tempGrid[r].includes(-1)) { // If the current row is now full
         for (let i = 0; i < n; i++) {
             if (i === r) continue;
-            if (!tempGrid[i].includes(-1)) { // Compare only with other full rows
+            // Compare with any other row that is also full
+            if (!tempGrid[i].includes(-1)) {
                 if (tempGrid[i].every((cell, j) => cell === tempGrid[r][j])) {
                     return false;
                 }
             }
         }
     }
-    let colIsFull = true;
-    for (let i = 0; i < n; i++) { if (tempGrid[i][c] === -1) { colIsFull = false; break; } }
+    let colIsFull = !tempGrid.some(row => row[c] === -1);
     if (colIsFull) {
         for (let j = 0; j < n; j++) {
             if (j === c) continue;
-            let otherColIsFull = true;
-            for (let i = 0; i < n; i++) { if (tempGrid[i][j] === -1) { otherColIsFull = false; break; } }
+            let otherColIsFull = !tempGrid.some(row => row[j] === -1);
             if (otherColIsFull) {
                 let colsAreIdentical = true;
                 for (let i = 0; i < n; i++) {
@@ -128,12 +130,10 @@ export default async function handler(request, response) {
             return response.status(400).json({ error: 'Invalid input format.' });
         }
 
-        // NEW: Check if grid size is even, as the balance rule requires it.
         if (gridSize % 2 !== 0) {
             return response.status(400).json({ error: "Invalid puzzle: Grid size must be an even number." });
         }
 
-        // Create a map for faster constraint lookups
         const constraintsMap = new Map();
         constraints.forEach(c => {
             constraintsMap.set(`${c.c1.join(',')}-${c.c2.join(',')}`, c.type);
