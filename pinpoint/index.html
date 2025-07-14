@@ -12,13 +12,12 @@
         body {
             font-family: 'Inter', sans-serif;
         }
-        /* Simple animation for the result */
+        .result-display {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
-        }
-        .result-display {
-            animation: fadeIn 0.5s ease-out forwards;
         }
     </style>
 </head>
@@ -31,31 +30,23 @@
                 <p class="text-gray-400 mt-2">Enter the words revealed so far (1 to 5) to guess the category.</p>
             </div>
 
-            <!-- Input Area -->
             <div class="mb-4">
                 <label for="words-input" class="sr-only">Puzzle Words</label>
-                <textarea id="words-input" rows="4" class="w-full p-4 bg-gray-900 border-2 border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-200 placeholder-gray-500" placeholder="Enter 1-5 words, separated by spaces, commas, or new lines..."></textarea>
+                <textarea id="words-input" rows="4" class="w-full p-4 bg-gray-900 border-2 border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-200 placeholder-gray-500" placeholder="Enter 1-5 words..."></textarea>
             </div>
 
-            <!-- Action Button -->
             <button id="solve-button" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-500 focus:ring-opacity-50 disabled:bg-gray-600 disabled:cursor-not-allowed">
                 <span id="button-text">Guess Category</span>
                 <span id="button-spinner" class="hidden">
-                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
+                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                     Thinking...
                 </span>
             </button>
 
-            <!-- Results Area -->
-            <div id="results-container" class="mt-8">
-                <!-- Result will be injected here -->
-            </div>
+            <div id="results-container" class="mt-8"></div>
         </div>
-        <footer class="text-center mt-6 text-gray-500 text-sm">
-            <p>Powered by Gemini AI</p>
+        <footer class="text-center mt-6">
+            <a href="/" class="text-blue-400 hover:text-blue-300">&larr; Back to All Games</a>
         </footer>
     </div>
 
@@ -69,7 +60,6 @@
         solveButton.addEventListener('click', handleSolve);
 
         async function handleSolve() {
-            // 1. Get and validate input
             const rawText = wordsInput.value.trim();
             const words = rawText.split(/[\s,]+/).filter(word => word.length > 0);
 
@@ -77,20 +67,13 @@
                 displayMessage('Please enter at least one word.', 'error');
                 return;
             }
-            if (words.length > 5) {
-                displayMessage('Pinpoint puzzles have a maximum of 5 words. Please check your input.', 'error');
-                return;
-            }
 
-            // 2. Update UI to loading state
             setLoadingState(true);
             resultsContainer.innerHTML = '';
 
-            // 3. Call our own secure serverless function
             try {
-                // This URL points to the serverless function for Vercel.
-                // Vercel automatically knows how to handle this path.
-                const response = await fetch('/api/solve', {
+                // IMPORTANT: This URL now points to the namespaced API route
+                const response = await fetch('/api/pinpoint/solve', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ words: words })
@@ -108,7 +91,6 @@
                 console.error('Error solving puzzle:', error);
                 displayMessage(`An error occurred: ${error.message}`, 'error');
             } finally {
-                // 4. Reset UI from loading state
                 setLoadingState(false);
             }
         }
@@ -125,25 +107,13 @@
                 displayMessage('The AI could not determine a category. Try adding another word.', 'error');
                 return;
             }
-
             const resultDiv = document.createElement('div');
             resultDiv.className = 'result-display text-center bg-gray-700 rounded-lg p-6';
-
-            const wordsP = document.createElement('p');
-            wordsP.className = 'text-gray-400 mb-2';
-            wordsP.textContent = 'For the words: ' + words.join(', ');
-            resultDiv.appendChild(wordsP);
-
-            const categoryLabel = document.createElement('p');
-            categoryLabel.className = 'text-lg text-blue-300';
-            categoryLabel.textContent = 'The category is likely:';
-            resultDiv.appendChild(categoryLabel);
-
-            const categoryH = document.createElement('h2');
-            categoryH.className = 'text-3xl font-bold text-white mt-1';
-            categoryH.textContent = category;
-            resultDiv.appendChild(categoryH);
-            
+            resultDiv.innerHTML = `
+                <p class="text-gray-400 mb-2">For the words: ${words.join(', ')}</p>
+                <p class="text-lg text-blue-300">The category is likely:</p>
+                <h2 class="text-3xl font-bold text-white mt-1">${category}</h2>
+            `;
             resultsContainer.appendChild(resultDiv);
         }
 
