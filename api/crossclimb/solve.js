@@ -153,9 +153,8 @@ export default async function handler(request, response) {
             const refinerPrompt = `
                 The previous proposed solution to a Crossclimb puzzle was invalid.
                 Previous Proposed Solution: ${JSON.stringify(initialSolution)}
-                List of errors found by my verification script: ${validationErrors.join('; ')}
 
-                Please re-solve the entire puzzle from the beginning, paying careful attention to the errors found and all of the original rules.
+                Please re-solve the entire puzzle from the beginning, using the previous solution as a hint.
 
                 Original Puzzle Details:
                 - Word Length: ${wordLength}
