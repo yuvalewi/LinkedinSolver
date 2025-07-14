@@ -79,7 +79,15 @@
                 }
 
                 const result = await response.json();
-                displayResults(result);
+                
+                // Re-order the solved words to match the user's input order
+                const clueToWordMap = new Map(result.solved_words.map(item => [item.clue, item.word]));
+                const sortedSolvedWords = allClues.map(clue => ({
+                    clue: clue,
+                    word: clueToWordMap.get(clue) || '???'
+                }));
+
+                displayResults(sortedSolvedWords, result.ordered_ladder);
 
             } catch (error) {
                 displayMessage(error.message);
@@ -93,16 +101,22 @@
             solveButton.textContent = isLoading ? 'Solving...' : 'Solve Ladder';
         }
 
-        function displayResults(data) {
+        function displayResults(solved_words, ordered_ladder) {
             resultsContainer.innerHTML = '';
-            const { solved_words, ordered_ladder } = data;
-
+            
             if (!solved_words || !ordered_ladder || solved_words.length === 0 || ordered_ladder.length === 0) {
                 displayMessage('The AI could not find a solution. Please check your clues.');
                 return;
             }
 
-            // --- Part 1: Display Solved Words ---
+            // Create a color map based on the final ladder order
+            const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6'];
+            const wordToColor = new Map();
+            ordered_ladder.forEach((word, index) => {
+                wordToColor.set(word.toUpperCase(), colors[index % colors.length]);
+            });
+
+            // --- Part 1: Display Solved Words (in user's input order) ---
             const solvedWordsDiv = document.createElement('div');
             solvedWordsDiv.className = 'result-item';
             
@@ -112,11 +126,16 @@
             solvedWordsDiv.appendChild(solvedTitle);
 
             const solvedList = document.createElement('div');
-            solvedList.className = 'grid grid-cols-1 gap-2 bg-gray-700 p-4 rounded-lg';
+            solvedList.className = 'grid grid-cols-1 gap-3 bg-gray-700 p-4 rounded-lg';
             solved_words.forEach(item => {
+                const color = wordToColor.get(item.word.toUpperCase()) || '#6b7280'; // gray for unknown
                 const clueDiv = document.createElement('div');
-                clueDiv.className = 'flex justify-between items-center text-sm';
-                clueDiv.innerHTML = `<span class="text-gray-400">${item.clue}</span> <span class="font-semibold text-white">${item.word.toUpperCase()}</span>`;
+                clueDiv.className = 'flex items-center gap-3 text-sm';
+                clueDiv.innerHTML = `
+                    <div class="w-2 h-5 rounded" style="background-color: ${color};"></div>
+                    <span class="flex-1 text-gray-300">${item.clue}</span>
+                    <span class="font-semibold text-white tracking-wider">${item.word.toUpperCase()}</span>
+                `;
                 solvedList.appendChild(clueDiv);
             });
             solvedWordsDiv.appendChild(solvedList);
@@ -135,9 +154,13 @@
             const ladderDiv = document.createElement('div');
             ladderDiv.className = 'flex flex-col items-center space-y-2 bg-gray-700 p-4 rounded-lg';
             ordered_ladder.forEach((word, index) => {
+                const color = wordToColor.get(word.toUpperCase()) || '#6b7280';
                 const rung = document.createElement('div');
-                rung.className = 'w-full text-center p-2 bg-gray-800 rounded-md font-mono tracking-widest text-xl';
-                rung.textContent = word.toUpperCase();
+                rung.className = 'w-full text-center p-2 bg-gray-800 rounded-md font-mono tracking-widest text-xl flex items-center gap-3';
+                rung.innerHTML = `
+                    <div class="w-2 h-5 rounded" style="background-color: ${color};"></div>
+                    <span class="flex-1">${word.toUpperCase()}</span>
+                `;
                 ladderDiv.appendChild(rung);
             });
             orderedLadderDiv.appendChild(ladderDiv);
