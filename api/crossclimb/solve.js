@@ -1,168 +1,81 @@
-// content/crossclimb.js - Now focuses only on solving and displaying the clues.
+// Located at /api/crossclimb/solve.js
+// This version focuses ONLY on getting the most accurate list of solved words.
 
-const discoveredClues = new Set();
-let totalRungs = 0;
-let automationDone = false;
-let solverHasRun = false;
+export default async function handler(request, response) {
+    // Handle CORS
+    response.setHeader('Access-Control-Allow-Origin', '*');
+    response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    if (request.method === 'OPTIONS') return response.status(200).end();
+    if (request.method !== 'POST') return response.status(405).json({ error: 'Method Not Allowed' });
 
-// --- UI Injection Functions ---
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) return response.status(500).json({ error: 'API key not configured.' });
 
-function createOrUpdateOverlay(id, content, isError = false) {
-    let overlay = document.getElementById(id);
-    if (!overlay) {
-        overlay = document.createElement('div');
-        overlay.id = id;
-        Object.assign(overlay.style, {
-            position: 'fixed', top: '20px', right: '20px', zIndex: '9999',
-            backgroundColor: 'rgba(42, 52, 65, 0.98)',
-            color: 'white', padding: '16px',
-            borderRadius: '12px', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
-            width: '340px', fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif', 
-            border: '1px solid #4b5563'
-        });
-        document.body.appendChild(overlay);
-    }
-    overlay.innerHTML = content;
-    overlay.style.borderColor = isError ? '#ef4444' : '#3b82f6';
-}
-
-function showSolvedWordsUI(solved_words, originalClues) {
-    // Re-order the solved words to match the user's input order for consistency
-    const clueToWordMap = new Map(solved_words.map(item => [item.clue, item.word]));
-    const displaySolvedWords = originalClues.map(clue => ({
-        clue: clue,
-        word: clueToWordMap.get(clue) || '???'
-    }));
-
-    const solvedWordsHTML = displaySolvedWords.map(item => `
-        <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.5rem 0.25rem;">
-            <p style="color: #d1d5db; font-size: 14px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${item.clue}">${item.clue}</p>
-            <p style="font-family: monospace; font-weight: 600; color: white; letter-spacing: 0.1em; font-size: 16px; margin: 0;">${item.word.toUpperCase()}</p>
-        </div>
-    `).join('');
-
-    const html = `
-        <div>
-            <h3 style="font-size: 20px; font-weight: 600; text-align: center; margin-bottom: 12px; color: #93c5fd;">Solved Words</h3>
-            <div style="background-color: #374151; padding: 8px 12px; border-radius: 8px; display: flex; flex-direction: column; gap: 4px;">
-                ${solvedWordsHTML}
-            </div>
-        </div>
-    `;
-    createOrUpdateOverlay('crossclimb-solver-overlay', html);
-}
-
-// --- Core Logic ---
-
-async function callApi(payload) {
-    const { vercelUrl } = await chrome.storage.sync.get('vercelUrl');
-    if (!vercelUrl) throw new Error('API URL not set in extension options.');
-    
-    const crossclimbApiUrl = vercelUrl.replace('/pinpoint/solve', '/crossclimb/solve');
-
-    const response = await fetch(crossclimbApiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-        const errorData = await response.json();
-        // The detailed log is now a stringified JSON in the error field
-        const errorMessage = typeof errorData.error === 'string' ? errorData.error : JSON.stringify(errorData.error, null, 2);
-        throw new Error(errorMessage);
-    }
-    return response.json();
-}
-
-async function runLadderSolver() {
-    if (solverHasRun) return;
-
-    const clues = Array.from(discoveredClues);
-    const wordLength = getWordLength();
-    const activeClue = document.querySelector('p.crossclimb__clue')?.textContent.trim();
-
-    if (clues.length < totalRungs || wordLength === 0 || !activeClue) return;
-
-    solverHasRun = true;
-    createOrUpdateOverlay('crossclimb-solver-overlay', '<p style="text-align: center; color: #9ca3af;">Solving clues...</p>');
-    
     try {
-        const result = await callApi({ type: 'ladder', allClues: clues, wordLength, activeClue });
-        showSolvedWordsUI(result.solved_words, clues);
+        const { type } = request.body;
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+        
+        if (type === 'ladder') {
+            const { allClues, wordLength } = request.body;
+            if (!allClues || !Array.isArray(allClues) || allClues.length < 2 || !wordLength) {
+                return response.status(400).json({ error: 'Missing required fields for ladder.' });
+            }
+
+            // --- STEP 1: GENERATOR PROMPT ---
+            const generatorPrompt = `You are an expert puzzle solver for the LinkedIn game "Crossclimb". Your task is to solve each clue to find the corresponding ${wordLength}-letter word. Here are the puzzle details: Word Length: ${wordLength}, List of available clues: ${allClues.join('; ')}. Return ONLY a list of objects, where each object contains a 'clue' and its solved 'word'. It is critical that you provide a solved word for EVERY clue.`;
+            const schema = {
+                type: "OBJECT",
+                properties: { "solved_words": { type: "ARRAY", description: `An array of objects, each containing a clue and its corresponding solved word. This array MUST have exactly ${allClues.length} items.`, items: { type: "OBJECT", properties: { "clue": { "type": "STRING" }, "word": { "type": "STRING" } }, required: ["clue", "word"] } } },
+                required: ["solved_words"]
+            };
+            const generatorPayload = { contents: [{ role: "user", parts: [{ text: generatorPrompt }] }], generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0.1 } };
+            
+            const genResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(generatorPayload) });
+            if (!genResponse.ok) throw new Error(`Gemini API failed: ${genResponse.statusText}`);
+            let initialSolution = JSON.parse((await genResponse.json()).candidates[0].content.parts[0].text);
+
+            // --- STEP 2: VERIFIER PROMPT ---
+            const verifierPrompt = `You are a puzzle verifier. Given a list of clues and proposed solutions, identify which solutions are correct. A solution is correct if the word is a valid answer for the clue. Return a list of the (clue, word) pairs that you believe are solved correctly. Clues and solutions: ${JSON.stringify(initialSolution.solved_words)}`;
+            const verifierSchema = {
+                type: "OBJECT",
+                properties: { "correct_pairs": { type: "ARRAY", description: "A list of the {clue, word} objects that were solved correctly.", items: { type: "OBJECT", properties: { "clue": { "type": "STRING" }, "word": { "type": "STRING" } }, required: ["clue", "word"] } } },
+                required: ["correct_pairs"]
+            };
+            const verifierPayload = { contents: [{ role: "user", parts: [{ text: verifierPrompt }] }], generationConfig: { responseMimeType: "application/json", responseSchema: verifierSchema, temperature: 0.0 } };
+
+            const verifierResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(verifierPayload) });
+            if (!verifierResponse.ok) throw new Error(`Gemini API failed on verification: ${verifierResponse.statusText}`);
+            const { correct_pairs } = JSON.parse((await verifierResponse.json()).candidates[0].content.parts[0].text);
+
+            const correctCluesSet = new Set(correct_pairs.map(p => p.clue));
+            const incorrectClues = allClues.filter(clue => !correctCluesSet.has(clue));
+            let finalSolvedWords = correct_pairs;
+
+            // --- STEP 3: REFINER PROMPT (if needed) ---
+            if (incorrectClues.length > 0) {
+                const refinerPrompt = `You are an expert puzzle solver for the LinkedIn game "Crossclimb". You are given a puzzle that is partially solved. Your task is to solve the remaining clues. Here are the puzzle details: - Word Length: ${wordLength} - Clues that are ALREADY SOLVED CORRECTLY: ${JSON.stringify(finalSolvedWords)} - Clues that still need to be solved: ${incorrectClues.join('; ')}. Your task is to solve ONLY the remaining incorrect clues. Return a list of objects for ONLY the newly solved clues.`;
+                const refinerSchema = {
+                    type: "OBJECT",
+                    properties: { "solved_words": { type: "ARRAY", description: `An array of objects for the newly solved clues. This array MUST have exactly ${incorrectClues.length} items.`, items: { type: "OBJECT", properties: { "clue": { "type": "STRING" }, "word": { "type": "STRING" } }, required: ["clue", "word"] } } },
+                    required: ["solved_words"]
+                };
+                const refinerPayload = { contents: [{ role: "user", parts: [{ text: refinerPrompt }] }], generationConfig: { responseMimeType: "application/json", responseSchema: refinerSchema, temperature: 0.1 } };
+                
+                const refinerResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(refinerPayload) });
+                if (!refinerResponse.ok) throw new Error(`Gemini API failed on refinement: ${refinerResponse.statusText}`);
+                const { solved_words: refinedWords } = JSON.parse((await refinerResponse.json()).candidates[0].content.parts[0].text);
+                
+                finalSolvedWords = [...finalSolvedWords, ...refinedWords];
+            }
+
+            return response.status(200).json({ solved_words: finalSolvedWords });
+
+        } else {
+            return response.status(400).json({ error: 'Invalid request type. This endpoint now only supports "ladder".' });
+        }
     } catch (error) {
-        solverHasRun = false;
-        // Display the detailed log from the server
-        createOrUpdateOverlay('crossclimb-solver-overlay', `<pre style="color: #f87171; white-space: pre-wrap; font-size: 12px;">${error.message}</pre>`, true);
+        console.error('Error in Crossclimb solver function:', error);
+        return response.status(500).json({ error: 'An internal server error occurred.' });
     }
 }
-
-// --- Observers and Automation ---
-
-const debouncedRunSolver = debounce(runLadderSolver, 1000);
-
-function handleClueChange(clueElement) {
-    if (clueElement && clueElement.textContent) {
-        const newClue = clueElement.textContent.trim();
-        if (newClue && !discoveredClues.has(newClue)) {
-            discoveredClues.add(newClue);
-        }
-        if (automationDone && discoveredClues.size === totalRungs) {
-            debouncedRunSolver();
-        } else if (!automationDone) {
-            createOrUpdateOverlay('crossclimb-solver-overlay', `<p style="text-align: center; color: #9ca3af;">Automatically discovering clues... (${discoveredClues.size}/${totalRungs})</p>`);
-        }
-    }
-}
-
-async function automateClueDiscovery() {
-    const nextButton = document.querySelector('button[aria-label="Go to next row"]');
-    if (!nextButton) return;
-    const delay = ms => new Promise(res => setTimeout(res, ms));
-    for (let i = 0; i < totalRungs * 2; i++) {
-        if (discoveredClues.size === totalRungs) break;
-        nextButton.click();
-        await delay(100);
-    }
-    automationDone = true;
-    if (discoveredClues.size === totalRungs) {
-        runLadderSolver();
-    }
-}
-
-const mainObserver = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-        if (mutation.target.matches('.crossclimb__clue')) {
-            handleClueChange(mutation.target);
-            return;
-        }
-    }
-});
-
-function startObservers() {
-    const gameContainer = document.querySelector('.crossclimb__wrapper');
-    if (gameContainer) {
-        totalRungs = document.querySelectorAll('.crossclimb__guess--middle').length;
-        if(totalRungs > 0) {
-            mainObserver.observe(gameContainer, { childList: true, subtree: true, characterData: true });
-            automateClueDiscovery();
-        }
-    } else {
-        setTimeout(startObservers, 1000);
-    }
-}
-
-function getWordLength() {
-    const guessBoxContainer = document.querySelector('.crossclimb__guess--middle .crossclimb__guess__inner');
-    return guessBoxContainer ? guessBoxContainer.querySelectorAll('.crossclimb__guess_box').length : 0;
-}
-
-function debounce(func, wait) {
-    let timeout;
-    return (...args) => {
-        clearTimeout(timeout);
-        timeout = setTimeout(() => func(...args), wait);
-    };
-}
-
-startObservers();
