@@ -162,7 +162,7 @@ export default async function handler(request, response) {
             //     };
             //     return response.status(400).json({ error: JSON.stringify(debugLog, null, 2) });
             // }
-            // const allSolvedWords = finalSolvedWords.map(sw => sw.word);
+            const allSolvedWords = finalSolvedWords.map(sw => sw.word);
             let orderdLadder = findLadderPath(allSolvedWords, finalSolvedWords[finalSolvedWords.length - 1].word);
 e
             // --- STEP 5: GRACEFUL FALLBACK ---
