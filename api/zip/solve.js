@@ -1,52 +1,50 @@
 // Located at /api/zip/solve.js
-// Solves the Zip puzzle algorithmically.
+// This version's algorithm now accounts for walls.
 
 // --- Algorithmic Solver ---
 
-function solveZip(gridSize, numbers) {
+function solveZip(gridSize, numbers, walls) {
     const n = gridSize;
     const totalCells = n * n;
     const path = [];
     const visited = new Set();
     const numberLocations = new Map();
+    
+    // Create a set of wall strings for fast lookup
+    const wallSet = new Set();
+    walls.forEach(([[r1, c1], [r2, c2]]) => {
+        wallSet.add(`${r1},${c1}-${r2},${c2}`);
+        wallSet.add(`${r2},${c2}-${r1},${c1}`);
+    });
 
-    // Create a map from coordinate string to number
     for (const num in numbers) {
         numberLocations.set(numbers[num].join(','), parseInt(num));
     }
     
-    // Sort the numbers to find the start and end points
     const sortedNumbers = Object.keys(numbers).map(Number).sort((a, b) => a - b);
     const startNum = sortedNumbers[0];
     const maxNum = sortedNumbers[sortedNumbers.length - 1];
 
     const [startR, startC] = numbers[startNum];
     
-    // Directions: 0:Up, 1:Right, 2:Down, 3:Left
     const dr = [-1, 0, 1, 0];
     const dc = [0, 1, 0, -1];
 
     function solve(r, c, currentNum) {
-        // Add current cell to path
         const key = `${r},${c}`;
         path.push([r, c]);
         visited.add(key);
 
-        // Check if we have found a complete path
         if (path.length === totalCells) {
-            // A valid path must end on a numbered cell if it's the max number
             if (currentNum === maxNum && numberLocations.has(key) && numberLocations.get(key) === maxNum) {
                 return true;
             }
-            // Or if it's a non-numbered cell but we've found all numbers
             if (currentNum === maxNum && !numberLocations.has(key)) {
                 return true;
             }
         }
         
-        // If we are on a numbered cell, the number must match
         if (numberLocations.has(key) && numberLocations.get(key) !== currentNum) {
-            // Backtrack
             visited.delete(key);
             path.pop();
             return false;
@@ -54,21 +52,20 @@ function solveZip(gridSize, numbers) {
 
         const nextNum = numberLocations.has(key) ? currentNum + 1 : currentNum;
 
-        // Try all 4 directions
         for (let i = 0; i < 4; i++) {
             const nr = r + dr[i];
             const nc = c + dc[i];
             const nextKey = `${nr},${nc}`;
+            const wallKey = `${r},${c}-${nr},${nc}`;
 
-            // Check if the next cell is valid and not visited
-            if (nr >= 0 && nr < n && nc >= 0 && nc < n && !visited.has(nextKey)) {
+            // NEW: Check for walls before proceeding
+            if (nr >= 0 && nr < n && nc >= 0 && nc < n && !visited.has(nextKey) && !wallSet.has(wallKey)) {
                 if (solve(nr, nc, nextNum)) {
                     return true;
                 }
             }
         }
 
-        // Backtrack
         visited.delete(key);
         path.pop();
         return false;
@@ -77,7 +74,7 @@ function solveZip(gridSize, numbers) {
     if (solve(startR, startC, startNum)) {
         return path;
     }
-    return null; // No solution found
+    return null;
 }
 
 
@@ -97,12 +94,12 @@ export default async function handler(request, response) {
     }
     
     try {
-        const { gridSize, numbers } = request.body;
-        if (!gridSize || !numbers) {
+        const { gridSize, numbers, walls } = request.body;
+        if (!gridSize || !numbers || !walls) {
             return response.status(400).json({ error: 'Invalid input format.' });
         }
 
-        const path = solveZip(gridSize, numbers);
+        const path = solveZip(gridSize, numbers, walls);
 
         if (path) {
             return response.status(200).json({ path });
