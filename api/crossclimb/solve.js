@@ -1,5 +1,5 @@
 // Located at /api/crossclimb/solve.js
-// This version uses a more robust multi-step AI Generate -> AI Verify Pairs -> AI Refine -> Algorithm Order process.
+// This version uses a corrected ordering algorithm and a graceful fallback.
 
 // --- Algorithmic Word Ladder Solver ---
 
@@ -12,26 +12,43 @@ function isOneLetterDiff(word1, word2) {
     return diff === 1;
 }
 
+// UPDATED: This function now finds the longest possible path instead of just one complete path.
 function findLadderPath(words, startWord) {
     const wordSet = new Set(words.map(w => w.toUpperCase()));
     const start = startWord.toUpperCase();
     if (!wordSet.has(start)) return null;
 
+    let longestPath = [];
+
     function solve(currentPath) {
-        if (currentPath.length === wordSet.size) return currentPath;
+        // At every step, check if the current path is the longest one we've found so far.
+        if (currentPath.length > longestPath.length) {
+            longestPath = [...currentPath];
+        }
+
+        // If we find a path that uses all words, we can stop searching.
+        if (currentPath.length === wordSet.size) {
+            return true; 
+        }
+
         const lastWord = currentPath[currentPath.length - 1];
         for (const word of wordSet) {
             if (!currentPath.includes(word) && isOneLetterDiff(lastWord, word)) {
                 currentPath.push(word);
-                const result = solve(currentPath);
-                if (result) return result;
-                currentPath.pop();
+                // If a full solution is found down this branch, propagate the success signal up.
+                if (solve(currentPath)) {
+                    return true;
+                }
+                currentPath.pop(); // Backtrack
             }
         }
-        return null;
+        return false; // Continue exploring other branches
     }
-    const resultPath = solve([start]);
-    return resultPath ? resultPath.reverse() : null;
+
+    solve([start]); // Start the search from the bottom word.
+    
+    // Return the longest path found, reversed to be top-to-bottom.
+    return longestPath.length > 0 ? longestPath.reverse() : null;
 }
 
 
@@ -166,7 +183,8 @@ export default async function handler(request, response) {
             let orderedLadder = findLadderPath(allSolvedWords, bottomWord);
 
             // --- STEP 5: GRACEFUL FALLBACK ---
-            if (!orderedLadder) {
+            if (!orderedLadder || orderedLadder.length < allSolvedWords.length) {
+                // If the algorithm fails to find a *complete* path, use the AI's original ordering as a best guess.
                 orderedLadder = initialSolution.ordered_ladder;
             }
 
