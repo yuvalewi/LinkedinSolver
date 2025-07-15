@@ -1,5 +1,5 @@
 // Located at /api/crossclimb/solve.js
-// This version uses a multi-step AI Generate -> AI Verify -> AI Refine -> Algorithm Order process.
+// This version adds detailed error logging to the response if the active clue is not found.
 
 // --- Algorithmic Word Ladder Solver ---
 
@@ -117,6 +117,7 @@ export default async function handler(request, response) {
             const correctCluesSet = new Set(correct_clues);
             const incorrectClues = allClues.filter(clue => !correctCluesSet.has(clue));
             let finalSolvedWords = initialSolution.solved_words.filter(sw => correctCluesSet.has(sw.clue));
+            let refinedWords = []; // Define here to be available for the log
 
             // --- STEP 3: REFINER PROMPT (if needed) ---
             if (incorrectClues.length > 0) {
@@ -141,7 +142,8 @@ export default async function handler(request, response) {
                 
                 const refinerResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(refinerPayload) });
                 if (!refinerResponse.ok) throw new Error(`Gemini API failed on refinement: ${refinerResponse.statusText}`);
-                const { solved_words: refinedWords } = JSON.parse((await refinerResponse.json()).candidates[0].content.parts[0].text);
+                const refinerResult = JSON.parse((await refinerResponse.json()).candidates[0].content.parts[0].text);
+                refinedWords = refinerResult.solved_words;
                 
                 finalSolvedWords = [...finalSolvedWords, ...refinedWords];
             }
@@ -149,13 +151,24 @@ export default async function handler(request, response) {
             // --- STEP 4: ALGORITHMIC ORDERING ---
             const bottomWord = finalSolvedWords.find(sw => sw.clue === activeClue)?.word;
             if (!bottomWord) {
-                return response.status(400).json({ error: 'AI failed to solve the active clue. Cannot determine ladder order.' });
+                // NEW: Return a detailed log on failure
+                const debugLog = {
+                    message: 'AI failed to solve or find the active clue in the final word list. Cannot determine ladder order.',
+                    activeClue,
+                    step1_initialSolution: initialSolution,
+                    step2_verifier_correctClues: correct_clues,
+                    step3_refiner_incorrectCluesSent: incorrectClues,
+                    step3_refiner_newWordsReceived: refinedWords,
+                    step4_finalWordList: finalSolvedWords
+                };
+                return response.status(400).json({ error: JSON.stringify(debugLog, null, 2) });
             }
             const allSolvedWords = finalSolvedWords.map(sw => sw.word);
-            const orderedLadder = findLadderPath(allSolvedWords, bottomWord);
+            let orderedLadder = findLadderPath(allSolvedWords, bottomWord);
 
+            // --- STEP 5: GRACEFUL FALLBACK ---
             if (!orderedLadder) {
-                return response.status(500).json({ error: 'The AI returned words that cannot form a valid ladder, even after refinement.' });
+                orderedLadder = initialSolution.ordered_ladder;
             }
 
             return response.status(200).json({ solved_words: finalSolvedWords, ordered_ladder: orderedLadder });
