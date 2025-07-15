@@ -8,6 +8,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; }
+        .grid-container { display: grid; position: relative; }
         .grid-cell {
             background-color: #4b5563; /* bg-gray-600 */
             position: relative;
@@ -21,8 +22,19 @@
             color: white;
             font-size: 1.5rem;
             font-weight: bold;
+            pointer-events: none; /* Make input non-interactive directly */
         }
-        .grid-cell .number-input:focus { outline: none; }
+        .wall {
+            position: absolute;
+            background-color: rgba(107, 114, 128, 0.5); /* bg-gray-500 transparent */
+            z-index: 10;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            border-radius: 2px;
+        }
+        .wall.active {
+            background-color: #1f2937; /* bg-gray-800 */
+        }
         #solution-grid .path-line {
             position: absolute;
             background-color: #3b82f6; /* blue-500 */
@@ -37,21 +49,27 @@
         <div class="bg-gray-800 rounded-xl shadow-2xl p-6 md:p-8">
             <div class="text-center mb-6">
                 <h1 class="text-3xl md:text-4xl font-bold text-blue-400">Zip Solver</h1>
-                <p class="text-gray-400 mt-2">Click cells to place numbers.</p>
+                <p class="text-gray-400 mt-2">Recreate the puzzle grid below.</p>
             </div>
-            <div class="flex items-center justify-center mb-4">
-                 <label for="grid-size" class="text-sm font-medium text-gray-300 mr-2">Grid Size:</label>
-                 <select id="grid-size" class="bg-gray-900 border-2 border-gray-700 rounded-lg p-2 focus:ring-2 focus:ring-blue-500">
-                    <option value="5">5x5</option>
-                    <option value="6" selected>6x6</option>
-                    <option value="7">7x7</option>
-                    <option value="8">8x8</option>
-                    <option value="9">9x9</option>
-                    <option value="10">10x10</option>
-                 </select>
+            <div class="flex items-center justify-between mb-4">
+                 <div class="flex items-center gap-2">
+                    <label for="grid-size" class="text-sm font-medium text-gray-300">Grid Size:</label>
+                    <select id="grid-size" class="bg-gray-900 border-2 border-gray-700 rounded-lg p-2">
+                        <option value="5">5x5</option>
+                        <option value="6" selected>6x6</option>
+                        <option value="7">7x7</option>
+                        <option value="8">8x8</option>
+                        <option value="9">9x9</option>
+                        <option value="10">10x10</option>
+                    </select>
+                </div>
+                <div class="flex items-center gap-2 bg-gray-900 p-1 rounded-lg">
+                    <button id="mode-number" class="px-3 py-1 text-sm rounded-md bg-blue-600">Numbers</button>
+                    <button id="mode-wall" class="px-3 py-1 text-sm rounded-md">Walls</button>
+                </div>
             </div>
             <div id="input-grid-container" class="bg-gray-700 p-2 rounded-lg aspect-square">
-                <div id="input-grid" class="w-full h-full grid"></div>
+                <div id="input-grid" class="w-full h-full grid-container"></div>
             </div>
             <button id="solve-button" class="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg">
                 Solve Puzzle
@@ -62,7 +80,7 @@
         <div class="bg-gray-800 rounded-xl shadow-2xl p-6 md:p-8">
              <h2 class="text-2xl font-bold text-center text-blue-300 mb-4">Solution Path</h2>
              <div id="solution-container" class="bg-gray-700 p-2 rounded-lg aspect-square">
-                <div id="solution-grid" class="w-full h-full grid relative"></div>
+                <div id="solution-grid" class="w-full h-full grid-container relative"></div>
              </div>
         </div>
     </div>
@@ -75,8 +93,22 @@
         const inputGrid = document.getElementById('input-grid');
         const solutionGrid = document.getElementById('solution-grid');
         const solveButton = document.getElementById('solve-button');
+        const numberModeBtn = document.getElementById('mode-number');
+        const wallModeBtn = document.getElementById('mode-wall');
 
         let gridSize = 6;
+        let currentMode = 'number';
+
+        function setMode(mode) {
+            currentMode = mode;
+            if (mode === 'number') {
+                numberModeBtn.classList.add('bg-blue-600');
+                wallModeBtn.classList.remove('bg-blue-600');
+            } else {
+                wallModeBtn.classList.add('bg-blue-600');
+                numberModeBtn.classList.remove('bg-blue-600');
+            }
+        }
 
         function createGrid() {
             gridSize = parseInt(gridSizeSelect.value);
@@ -85,6 +117,8 @@
                 gridEl.style.gridTemplateColumns = `repeat(${gridSize}, 1fr)`;
                 gridEl.style.gridTemplateRows = `repeat(${gridSize}, 1fr)`;
             });
+
+            const cellPercentage = 100 / gridSize;
 
             for (let r = 0; r < gridSize; r++) {
                 for (let c = 0; c < gridSize; c++) {
@@ -95,26 +129,76 @@
                     input.className = 'number-input';
                     inputCell.appendChild(input);
                     inputGrid.appendChild(inputCell);
+                    
+                    inputCell.addEventListener('click', () => {
+                        if (currentMode === 'number') {
+                            input.focus();
+                        }
+                    });
 
                     const solutionCell = document.createElement('div');
                     solutionCell.className = 'grid-cell border border-gray-500';
                     solutionGrid.appendChild(solutionCell);
                 }
             }
+
+            // Create wall placers separately and overlay them
+            for (let r = 0; r < gridSize; r++) {
+                for (let c = 0; c < gridSize; c++) {
+                    // Vertical wall placer (to the right of the cell)
+                    if (c < gridSize - 1) {
+                        const vWall = document.createElement('div');
+                        vWall.className = 'wall';
+                        vWall.dataset.r1 = r; vWall.dataset.c1 = c;
+                        vWall.dataset.r2 = r; vWall.dataset.c2 = c + 1;
+                        vWall.style.width = '12px';
+                        vWall.style.height = `${cellPercentage * 0.6}%`;
+                        vWall.style.top = `calc(${r * cellPercentage}% + ${cellPercentage * 0.2}%)`;
+                        vWall.style.left = `calc(${(c + 1) * cellPercentage}% - 6px)`;
+                        vWall.addEventListener('click', () => toggleWall(vWall));
+                        inputGrid.appendChild(vWall);
+                    }
+                    // Horizontal wall placer (below the cell)
+                    if (r < gridSize - 1) {
+                        const hWall = document.createElement('div');
+                        hWall.className = 'wall';
+                        hWall.dataset.r1 = r; hWall.dataset.c1 = c;
+                        hWall.dataset.r2 = r + 1; hWall.dataset.c2 = c;
+                        hWall.style.width = `${cellPercentage * 0.6}%`;
+                        hWall.style.height = '12px';
+                        hWall.style.top = `calc(${(r + 1) * cellPercentage}% - 6px)`;
+                        hWall.style.left = `calc(${c * cellPercentage}% + ${cellPercentage * 0.2}%)`;
+                        hWall.addEventListener('click', () => toggleWall(hWall));
+                        inputGrid.appendChild(hWall);
+                    }
+                }
+            }
+        }
+        
+        function toggleWall(wallEl) {
+            if (currentMode === 'wall') {
+                wallEl.classList.toggle('active');
+            }
         }
 
         async function handleSolve() {
             const numbers = {};
+            const walls = [];
             const inputCells = inputGrid.querySelectorAll('.grid-cell');
             for (let r = 0; r < gridSize; r++) {
                 for (let c = 0; c < gridSize; c++) {
                     const cell = inputCells[r * gridSize + c];
                     const num = parseInt(cell.querySelector('input').value);
-                    if (!isNaN(num)) {
-                        numbers[num] = [r, c];
-                    }
+                    if (!isNaN(num)) numbers[num] = [r, c];
                 }
             }
+            
+            inputGrid.querySelectorAll('.wall.active').forEach(wallEl => {
+                walls.push([
+                    [parseInt(wallEl.dataset.r1), parseInt(wallEl.dataset.c1)],
+                    [parseInt(wallEl.dataset.r2), parseInt(wallEl.dataset.c2)]
+                ]);
+            });
 
             if (Object.keys(numbers).length < 2) {
                 alert('Please place at least two numbers on the grid.');
@@ -127,7 +211,7 @@
                 const response = await fetch('/api/zip/solve', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ gridSize, numbers })
+                    body: JSON.stringify({ gridSize, numbers, walls })
                 });
 
                 if (!response.ok) throw new Error((await response.json()).error || 'Server Error');
@@ -187,7 +271,11 @@
 
         gridSizeSelect.addEventListener('change', createGrid);
         solveButton.addEventListener('click', handleSolve);
+        numberModeBtn.addEventListener('click', () => setMode('number'));
+        wallModeBtn.addEventListener('click', () => setMode('wall'));
+
         createGrid();
+        setMode('number');
     </script>
 </body>
 </html>
