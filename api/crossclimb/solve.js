@@ -170,7 +170,7 @@ export default async function handler(request, response) {
             //     orderedLadder = finalSolvedWords.map(sw => sw.word);
             // }
 
-            return response.status(200).json({ solved_words: finalSolvedWords, ordered_ladder: finalSolvedWords });
+            return response.status(200).json({ solved_words: finalSolvedWords, ordered_ladder: finalSolvedWords.map(sw => sw.word) });
 
         } else if (type === 'final') {
             const { finalClue, orderedLadder } = request.body;
