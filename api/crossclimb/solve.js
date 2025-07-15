@@ -1,5 +1,5 @@
 // Located at /api/crossclimb/solve.js
-// This version adds detailed error logging to the response if the active clue is not found.
+// This version uses a more robust multi-step AI Generate -> AI Verify Pairs -> AI Refine -> Algorithm Order process.
 
 // --- Algorithmic Word Ladder Solver ---
 
@@ -102,22 +102,22 @@ export default async function handler(request, response) {
             let initialSolution = JSON.parse((await genResponse.json()).candidates[0].content.parts[0].text);
 
             // --- STEP 2: VERIFIER PROMPT ---
-            const verifierPrompt = `You are a puzzle verifier. Given a list of clues and proposed solutions, identify which solutions are correct. A solution is correct if the word is a valid answer for the clue. Return a list of the clues that you believe are solved correctly. Clues and solutions: ${JSON.stringify(initialSolution.solved_words)}`;
+            const verifierPrompt = `You are a puzzle verifier. Given a list of clues and proposed solutions, identify which solutions are correct. A solution is correct if the word is a valid answer for the clue. Return a list of the (clue, word) pairs that you believe are solved correctly. Clues and solutions: ${JSON.stringify(initialSolution.solved_words)}`;
             const verifierSchema = {
                 type: "OBJECT",
-                properties: { "correct_clues": { type: "ARRAY", description: "A list of the clues that were solved correctly.", items: { "type": "STRING" } } },
-                required: ["correct_clues"]
+                properties: { "correct_pairs": { type: "ARRAY", description: "A list of the {clue, word} objects that were solved correctly.", items: { type: "OBJECT", properties: { "clue": { "type": "STRING" }, "word": { "type": "STRING" } }, required: ["clue", "word"] } } },
+                required: ["correct_pairs"]
             };
             const verifierPayload = { contents: [{ role: "user", parts: [{ text: verifierPrompt }] }], generationConfig: { responseMimeType: "application/json", responseSchema: verifierSchema, temperature: 0.0 } };
 
             const verifierResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(verifierPayload) });
             if (!verifierResponse.ok) throw new Error(`Gemini API failed on verification: ${verifierResponse.statusText}`);
-            const { correct_clues } = JSON.parse((await verifierResponse.json()).candidates[0].content.parts[0].text);
+            const { correct_pairs } = JSON.parse((await verifierResponse.json()).candidates[0].content.parts[0].text);
 
-            const correctCluesSet = new Set(correct_clues);
+            const correctCluesSet = new Set(correct_pairs.map(p => p.clue));
             const incorrectClues = allClues.filter(clue => !correctCluesSet.has(clue));
-            let finalSolvedWords = initialSolution.solved_words.filter(sw => correctCluesSet.has(sw.clue));
-            let refinedWords = []; // Define here to be available for the log
+            let finalSolvedWords = correct_pairs;
+            let refinedWords = [];
 
             // --- STEP 3: REFINER PROMPT (if needed) ---
             if (incorrectClues.length > 0) {
@@ -151,12 +151,11 @@ export default async function handler(request, response) {
             // --- STEP 4: ALGORITHMIC ORDERING ---
             const bottomWord = finalSolvedWords.find(sw => sw.clue === activeClue)?.word;
             if (!bottomWord) {
-                // NEW: Return a detailed log on failure
                 const debugLog = {
                     message: 'AI failed to solve or find the active clue in the final word list. Cannot determine ladder order.',
                     activeClue,
                     step1_initialSolution: initialSolution,
-                    step2_verifier_correctClues: correct_clues,
+                    step2_verifier_correctPairs: correct_pairs,
                     step3_refiner_incorrectCluesSent: incorrectClues,
                     step3_refiner_newWordsReceived: refinedWords,
                     step4_finalWordList: finalSolvedWords
