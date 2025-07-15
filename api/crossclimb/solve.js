@@ -162,15 +162,15 @@ export default async function handler(request, response) {
             //     };
             //     return response.status(400).json({ error: JSON.stringify(debugLog, null, 2) });
             // }
-            const allSolvedWords = finalSolvedWords.map(sw => sw.word);
-            let orderdLadder = findLadderPath(allSolvedWords, allSolvedWords[allSolvedWords.length - 1].word);
-e
-            // --- STEP 5: GRACEFUL FALLBACK ---
-            if (!orderedLadder) {
-                orderedLadder = finalSolvedWords.map(sw => sw.word);
-            }
+            // const allSolvedWords = finalSolvedWords.map(sw => sw.word);
+            // let orderdLadder = findLadderPath(allSolvedWords, allSolvedWords[allSolvedWords.length - 1].word);
 
-            return response.status(200).json({ solved_words: finalSolvedWords, ordered_ladder: orderedLadder });
+            // // --- STEP 5: GRACEFUL FALLBACK ---
+            // if (!orderedLadder) {
+            //     orderedLadder = finalSolvedWords.map(sw => sw.word);
+            // }
+
+            return response.status(200).json({ solved_words: finalSolvedWords, ordered_ladder: finalSolvedWords });
 
         } else if (type === 'final') {
             const { finalClue, orderedLadder } = request.body;
