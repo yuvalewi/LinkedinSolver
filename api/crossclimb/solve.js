@@ -1,5 +1,5 @@
 // Located at /api/crossclimb/solve.js
-// This version uses a corrected ordering algorithm and a graceful fallback.
+// This version uses a more robust method to preserve the activeClue's solution.
 
 // --- Algorithmic Word Ladder Solver ---
 
@@ -12,7 +12,6 @@ function isOneLetterDiff(word1, word2) {
     return diff === 1;
 }
 
-// UPDATED: This function now finds the longest possible path instead of just one complete path.
 function findLadderPath(words, startWord) {
     const wordSet = new Set(words.map(w => w.toUpperCase()));
     const start = startWord.toUpperCase();
@@ -21,12 +20,9 @@ function findLadderPath(words, startWord) {
     let longestPath = [];
 
     function solve(currentPath) {
-        // At every step, check if the current path is the longest one we've found so far.
         if (currentPath.length > longestPath.length) {
             longestPath = [...currentPath];
         }
-
-        // If we find a path that uses all words, we can stop searching.
         if (currentPath.length === wordSet.size) {
             return true; 
         }
@@ -35,19 +31,16 @@ function findLadderPath(words, startWord) {
         for (const word of wordSet) {
             if (!currentPath.includes(word) && isOneLetterDiff(lastWord, word)) {
                 currentPath.push(word);
-                // If a full solution is found down this branch, propagate the success signal up.
                 if (solve(currentPath)) {
                     return true;
                 }
-                currentPath.pop(); // Backtrack
+                currentPath.pop();
             }
         }
-        return false; // Continue exploring other branches
+        return false;
     }
 
-    solve([start]); // Start the search from the bottom word.
-    
-    // Return the longest path found, reversed to be top-to-bottom.
+    solve([start]);
     return longestPath.length > 0 ? longestPath.reverse() : null;
 }
 
@@ -118,8 +111,15 @@ export default async function handler(request, response) {
             if (!genResponse.ok) throw new Error(`Gemini API failed: ${genResponse.statusText}`);
             let initialSolution = JSON.parse((await genResponse.json()).candidates[0].content.parts[0].text);
 
-            // --- STEP 2: VERIFIER PROMPT ---
-            const verifierPrompt = `You are a puzzle verifier. Given a list of clues and proposed solutions, identify which solutions are correct. A solution is correct if the word is a valid answer for the clue. Return a list of the (clue, word) pairs that you believe are solved correctly. Clues and solutions: ${JSON.stringify(initialSolution.solved_words)}`;
+            // --- NEW: Preserve the anchor word and verify the rest ---
+            const anchorPair = initialSolution.solved_words.find(sw => sw.clue === activeClue);
+            if (!anchorPair) {
+                return response.status(400).json({ error: "AI failed to generate an initial solution for the active clue." });
+            }
+            const otherCluesAndSolutions = initialSolution.solved_words.filter(sw => sw.clue !== activeClue);
+            
+            // --- STEP 2: VERIFIER PROMPT (on other clues) ---
+            const verifierPrompt = `You are a puzzle verifier. Given a list of clues and proposed solutions, identify which solutions are correct. A solution is correct if the word is a valid answer for the clue. Return a list of the (clue, word) pairs that you believe are solved correctly. Clues and solutions: ${JSON.stringify(otherCluesAndSolutions)}`;
             const verifierSchema = {
                 type: "OBJECT",
                 properties: { "correct_pairs": { type: "ARRAY", description: "A list of the {clue, word} objects that were solved correctly.", items: { type: "OBJECT", properties: { "clue": { "type": "STRING" }, "word": { "type": "STRING" } }, required: ["clue", "word"] } } },
@@ -132,24 +132,13 @@ export default async function handler(request, response) {
             const { correct_pairs } = JSON.parse((await verifierResponse.json()).candidates[0].content.parts[0].text);
 
             const correctCluesSet = new Set(correct_pairs.map(p => p.clue));
-            const incorrectClues = allClues.filter(clue => !correctCluesSet.has(clue));
-            let finalSolvedWords = correct_pairs;
-            let refinedWords = [];
+            const allOtherClues = allClues.filter(clue => clue !== activeClue);
+            const incorrectClues = allOtherClues.filter(clue => !correctCluesSet.has(clue));
+            let finalSolvedWords = [...correct_pairs, anchorPair]; // Start with the correct pairs + our preserved anchor
 
             // --- STEP 3: REFINER PROMPT (if needed) ---
             if (incorrectClues.length > 0) {
-                const refinerPrompt = `
-                    You are an expert puzzle solver for the LinkedIn game "Crossclimb".
-                    You are given a puzzle that is partially solved. Your task is to solve the remaining clues.
-
-                    Here are the puzzle details:
-                    - Word Length: ${wordLength}
-                    - Clues that are ALREADY SOLVED CORRECTLY: ${JSON.stringify(finalSolvedWords)}
-                    - Clues that still need to be solved: ${incorrectClues.join('; ')}
-
-                    Your task is to solve ONLY the remaining incorrect clues.
-                    Return a list of objects for ONLY the newly solved clues.
-                `;
+                const refinerPrompt = `You are an expert puzzle solver for the LinkedIn game "Crossclimb". You are given a puzzle that is partially solved. Your task is to solve the remaining clues. Here are the puzzle details: - Word Length: ${wordLength} - Clues that are ALREADY SOLVED CORRECTLY: ${JSON.stringify(finalSolvedWords)} - Clues that still need to be solved: ${incorrectClues.join('; ')}. Your task is to solve ONLY the remaining incorrect clues. Return a list of objects for ONLY the newly solved clues.`;
                 const refinerSchema = {
                     type: "OBJECT",
                     properties: { "solved_words": { type: "ARRAY", description: `An array of objects for the newly solved clues. This array MUST have exactly ${incorrectClues.length} items.`, items: { type: "OBJECT", properties: { "clue": { "type": "STRING" }, "word": { "type": "STRING" } }, required: ["clue", "word"] } } },
@@ -159,32 +148,17 @@ export default async function handler(request, response) {
                 
                 const refinerResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(refinerPayload) });
                 if (!refinerResponse.ok) throw new Error(`Gemini API failed on refinement: ${refinerResponse.statusText}`);
-                const refinerResult = JSON.parse((await refinerResponse.json()).candidates[0].content.parts[0].text);
-                refinedWords = refinerResult.solved_words;
-                
+                const { solved_words: refinedWords } = JSON.parse((await refinerResponse.json()).candidates[0].content.parts[0].text);
                 finalSolvedWords = [...finalSolvedWords, ...refinedWords];
             }
 
             // --- STEP 4: ALGORITHMIC ORDERING ---
-            const bottomWord = finalSolvedWords.find(sw => sw.clue === activeClue)?.word;
-            if (!bottomWord) {
-                const debugLog = {
-                    message: 'AI failed to solve or find the active clue in the final word list. Cannot determine ladder order.',
-                    activeClue,
-                    step1_initialSolution: initialSolution,
-                    step2_verifier_correctPairs: correct_pairs,
-                    step3_refiner_incorrectCluesSent: incorrectClues,
-                    step3_refiner_newWordsReceived: refinedWords,
-                    step4_finalWordList: finalSolvedWords
-                };
-                return response.status(400).json({ error: JSON.stringify(debugLog, null, 2) });
-            }
+            const bottomWord = anchorPair.word;
             const allSolvedWords = finalSolvedWords.map(sw => sw.word);
             let orderedLadder = findLadderPath(allSolvedWords, bottomWord);
 
             // --- STEP 5: GRACEFUL FALLBACK ---
             if (!orderedLadder || orderedLadder.length < allSolvedWords.length) {
-                // If the algorithm fails to find a *complete* path, use the AI's original ordering as a best guess.
                 orderedLadder = initialSolution.ordered_ladder;
             }
 
